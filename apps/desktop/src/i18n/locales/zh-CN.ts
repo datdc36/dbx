@@ -5,6 +5,7 @@ import { redisGroupingZhCN as redisGrouping } from "./redisGrouping";
 import { withEnglishFallback } from "./fallback";
 import docs from "./docs/zh-CN";
 import { dataDictionaryZhCN as dataDictionary } from "./dataDictionaryMessages";
+import { queryDesignerZhCN as queryDesigner } from "./queryDesignerMessages";
 import { consul } from "./consulZhCN";
 import { meilisearchManagementZhCN } from "./meilisearchManagement";
 import { mongodbDatabaseDumpZhCN as mongoDump } from "./mongodbDatabaseDump";
@@ -747,6 +748,7 @@ export default withEnglishFallback({
   },
   docs,
   dataDictionary,
+  queryDesigner,
   pluginPlatform: {
     dataAccessConsent: "「{name}」请求读取连接「{connection}」中的数据。在该连接打开期间，插件可以对它执行只读查询，直到你在插件中心撤销授权。是否允许？",
     dataAccessConsentTitle: "数据访问请求",
@@ -3195,6 +3197,11 @@ export default withEnglishFallback({
     filterSqlCopied: "SQL 条件已复制",
     filterBuilderSummary: "{count} 条规则",
     filterBuilderAddRule: "新增条件",
+    filterRowPlaceholder: "筛选",
+    filterRowRangeEnd: "至",
+    filterRowOperator: "筛选运算符",
+    filterRowPickValues: "按值筛选",
+    filterRowUnsupported: "此结果无法在服务器端筛选：{reason}",
     filterBuilderApplyOnly: "仅筛选此项",
     filterBuilderCompleteRuleFirst: "请先补全此筛选条件",
     filterBuilderEnableRule: "启用条件",
@@ -10171,6 +10178,8 @@ export default withEnglishFallback({
     dataGridFilterViewDescription: "选择弹出式快捷筛选、固定条件面板或紧凑文本条件面板。",
     dataGridKeepFilterEditorExpanded: "默认展开筛选编辑器",
     dataGridKeepFilterEditorExpandedDescription: "在条件视图和文本视图中初始展开编辑器；仍可手动折叠。",
+    dataGridShowFilterRow: "在列标题下显示筛选行",
+    dataGridShowFilterRowDescription: "每列下方显示筛选框：输入值，从 ⋮ 选择运算符，或用漏斗按钮选择值。筛选在数据库上执行。",
     dataGridFilterViewPreview: "效果预览",
     dataGridFilterViewPreviewExpand: "展开效果预览",
     dataGridFilterViewPreviewCollapse: "收起效果预览",

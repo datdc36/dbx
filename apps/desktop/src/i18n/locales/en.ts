@@ -4,6 +4,7 @@ import { oceanbaseCloneDialogEn as oceanbaseCloneDialog } from "./oceanbaseClone
 import { redisGroupingEn as redisGrouping } from "./redisGrouping";
 import docs from "./docs/en";
 import { dataDictionaryEn as dataDictionary } from "./dataDictionaryMessages";
+import { queryDesignerEn as queryDesigner } from "./queryDesignerMessages";
 import { consulUiMessages } from "./consulUi";
 import { sqlServerTraceMessages as sqlServerTrace } from "./sqlServerTraceMessages";
 import { meilisearchManagementEn } from "./meilisearchManagement";
@@ -802,6 +803,7 @@ export default {
   },
   docs,
   dataDictionary,
+  queryDesigner,
   pluginPlatform: {
     dataAccessConsent: '"{name}" wants to read data from the connection "{connection}". While that connection is open, the plugin can run read-only queries on it until you revoke access in the Plugin Center. Allow?',
     dataAccessConsentTitle: "Data Access Request",
@@ -3264,6 +3266,11 @@ export default {
     filterSqlCopied: "SQL condition copied",
     filterBuilderSummary: "{count} rules",
     filterBuilderAddRule: "Add rule",
+    filterRowPlaceholder: "Filter",
+    filterRowRangeEnd: "to",
+    filterRowOperator: "Filter operator",
+    filterRowPickValues: "Filter by values",
+    filterRowUnsupported: "This result can't be filtered on the server: {reason}",
     filterBuilderApplyOnly: "Filter only this rule",
     filterBuilderCompleteRuleFirst: "Complete this filter rule first",
     filterBuilderEnableRule: "Enable rule",
@@ -10204,6 +10211,8 @@ export default {
     dataGridFilterViewDescription: "Use a filter popover, a fixed conditions panel, or a compact text conditions panel.",
     dataGridKeepFilterEditorExpanded: "Expand filter editor by default",
     dataGridKeepFilterEditorExpandedDescription: "Open the editor initially in Conditions and Text views. You can still collapse it manually.",
+    dataGridShowFilterRow: "Show filter row under column headers",
+    dataGridShowFilterRowDescription: "A filter box under each column: type a value, choose the operator from ⋮, or pick values with the funnel. Filters run on the database.",
     dataGridFilterViewPreview: "Effect preview",
     dataGridFilterViewPreviewExpand: "Expand effect preview",
     dataGridFilterViewPreviewCollapse: "Collapse effect preview",

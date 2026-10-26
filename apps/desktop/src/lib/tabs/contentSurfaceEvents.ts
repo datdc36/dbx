@@ -29,6 +29,7 @@ export const contentSurfaceEventNames = [
   "reload",
   "paginate",
   "sort",
+  "filterResults",
   "executeSql",
   "clickTable",
   "viewTableData",

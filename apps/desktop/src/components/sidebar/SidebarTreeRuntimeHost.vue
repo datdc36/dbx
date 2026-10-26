@@ -49,6 +49,7 @@ import {
   FileCode,
   FileText,
   Network,
+  Workflow,
   PencilRuler,
   Search,
   FolderInput,
@@ -536,6 +537,7 @@ const {
   openDataCompare,
   openDatabaseExport,
   openDatabaseSearch,
+  openQueryDesigner,
   openDataDictionary,
   openDiagram,
   openDocs,
@@ -7622,6 +7624,9 @@ function buildDatabaseSidebarMenu(context: SidebarMenuFactoryContext): boolean {
       items.push({ sidebarActionId: "diagram.open", label: t("diagram.open"), action: openDiagram, icon: Network });
       items.push({ sidebarActionId: "docs.title", label: t("docs.title"), action: openDocs, icon: BookOpen });
     }
+    if (canOpenDiagram.value) {
+      items.push({ sidebarActionId: "queryDesigner.open", label: t("queryDesigner.newDesigner"), action: openQueryDesigner, icon: Workflow });
+    }
     if (canOpenDatabaseSearch.value) {
       items.push({ sidebarActionId: "databaseSearch.open", label: t("databaseSearch.open"), action: openDatabaseSearch, icon: Search });
     }
@@ -8108,6 +8113,7 @@ function buildObjectSidebarMenu(context: SidebarMenuFactoryContext): boolean {
     if (sqlHistoryMenu) items.push(sqlHistoryMenu);
     if (canOpenDiagram.value) {
       items.push({ sidebarActionId: "diagram.open", label: t("diagram.open"), action: openDiagram, icon: Network });
+      items.push({ sidebarActionId: "queryDesigner.open", label: t("queryDesigner.designQuery"), action: openQueryDesigner, icon: Workflow });
     }
     if (canOpenTableImport.value) {
       items.push({ sidebarActionId: "contextMenu.importData", label: t("contextMenu.importData"), action: openTableImport, icon: Download });

@@ -18,6 +18,8 @@ const props = defineProps<{
   emptyMessage?: string;
   canUndo?: boolean;
   canRedo?: boolean;
+  /** Hosts that always show the preview hide its collapse button. */
+  closable?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -229,7 +231,7 @@ onMounted(() => {
         </TooltipTrigger>
         <TooltipContent>{{ t("grid.copy") }}</TooltipContent>
       </Tooltip>
-      <Tooltip>
+      <Tooltip v-if="closable !== false">
         <TooltipTrigger as-child>
           <Button variant="ghost" size="icon" class="h-6 w-6 text-muted-foreground/60 hover:text-foreground hover:bg-accent" :aria-label="t('toolbar.hidePreviewSql')" @click="emit('close')">
             <ChevronDown class="h-3.5 w-3.5" />

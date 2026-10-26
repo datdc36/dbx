@@ -22,6 +22,7 @@ import { applyMongoFindSort } from "@/lib/mongo/mongoShellCommand";
 import { uuid } from "@/lib/common/utils";
 import { primaryKeyTieBreakerIndexes, simpleDataGridOrderByReferencesMissingColumn, type DataGridSortMode } from "@/lib/dataGrid/dataGridSort";
 import type { DataGridReloadIntent } from "@/lib/dataGrid/dataGridToolbar";
+import type { DataGridFilterRowFilters } from "@/lib/dataGrid/dataGridFilterRow";
 import { continuousQueryResultMaxRows, MAX_QUERY_RESULT_MAX_ROWS } from "@/lib/dataGrid/queryResultRowLimit";
 import { queryResultBaseSql, queryResultExecutionSql } from "@/lib/tabs/tabPresentation";
 import { sqlExecutionTargetCapabilities } from "@/lib/database/sqlExecutionTargetCapabilities";
@@ -853,5 +854,47 @@ export function useDataGridActions(activeTab: ComputedRef<QueryTab | undefined>)
     });
   }
 
-  return { onExecuteSql, onReloadData, onPaginate, onSort };
+  /**
+   * Filter row on a query result: re-runs the result's query wrapped as
+   * `SELECT * FROM (<query>) dbx_filter WHERE …`; clearing it re-runs the original query.
+   */
+  async function onFilterResults(tabId: string | undefined, filters: DataGridFilterRowFilters, whereInput: string | undefined) {
+    const tab = resolveActionTab(tabId);
+    if (!tab || tab.mode !== "query") return;
+    const currentBaseSql = queryResultBaseSql(tab);
+    const previous = tab.resultFilterRow;
+    const baseSql = previous && previous.filteredSql === currentBaseSql ? previous.baseSql : currentBaseSql;
+    if (!baseSql.trim()) return;
+    const pagination = resultSortPagination(tab);
+    const executeOptions = {
+      ...activeQueryTargetOptions(tab),
+      ...refreshActiveResultRunOptions(tab),
+      resultSortedSql: undefined,
+      ...(pagination ? { pagination } : {}),
+      preserveResultDuringExecution: true,
+      replaceActiveResultInGroup: true,
+    };
+    tab.resultSortColumn = undefined;
+    tab.resultSortColumnIndex = undefined;
+    tab.resultSortDirection = undefined;
+    tab.resultSortMode = undefined;
+
+    if (!whereInput) {
+      tab.resultFilterRow = undefined;
+      await queryStore.executeTabSql(tab.id, baseSql, { ...executeOptions, resultBaseSql: baseSql });
+      return;
+    }
+    const executionTarget = queryStore.activeResultExecutionTarget(tab.id);
+    const config = connectionStore.getConfig(executionTarget?.connectionId ?? tab.connectionId);
+    const resultColumns = (tab.result?.columns ?? []).filter((_, index) => !tab.result?.hidden_column_indexes?.includes(index));
+    const built = await api.buildFilteredQuerySql({ originalSql: baseSql, databaseType: effectiveDatabaseTypeForConnection(config), resultColumns, whereInput });
+    if (!built.ok || !built.sql) {
+      toast(t("grid.filterRowUnsupported", { reason: built.reason ?? "unsupported" }), 5000);
+      return;
+    }
+    tab.resultFilterRow = { baseSql, filteredSql: built.sql, filters };
+    await queryStore.executeTabSql(tab.id, built.sql, { ...executeOptions, resultBaseSql: built.sql });
+  }
+
+  return { onExecuteSql, onReloadData, onPaginate, onSort, onFilterResults };
 }

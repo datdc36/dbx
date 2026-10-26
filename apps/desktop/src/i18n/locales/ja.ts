@@ -6,6 +6,7 @@ import { mongodbDatabaseDumpJa as mongoDump } from "./mongodbDatabaseDump";
 import { damengDumpJa as damengDump } from "./damengDump";
 import docs from "./docs/ja";
 import { dataDictionaryJa as dataDictionary } from "./dataDictionaryMessages";
+import { queryDesignerJa as queryDesigner } from "./queryDesignerMessages";
 import { consulJaMessages } from "./consulJa";
 import { nacosAccessControlMessages, nacosAccessControlTabs } from "./nacosAccessControl";
 import { sqlServerTraceMessages as sqlServerTrace } from "./sqlServerTraceMessages";
@@ -607,6 +608,7 @@ export default withEnglishFallback({
   },
   docs,
   dataDictionary,
+  queryDesigner,
   pluginPlatform: {
     dataAccessConsent: "「{name}」が接続「{connection}」のデータの読み取りを要求しています。許可すると、プラグインセンターで取り消すまで、この接続が開いている間はプラグインが読み取り専用クエリを実行できます。許可しますか？",
     dataAccessConsentTitle: "データアクセスの要求",
@@ -2758,6 +2760,11 @@ export default withEnglishFallback({
     filterSqlCopied: "SQL 条件をコピーしました",
     filterBuilderSummary: "{count}件のルール",
     filterBuilderAddRule: "ルールを追加",
+    filterRowPlaceholder: "フィルター",
+    filterRowRangeEnd: "終了",
+    filterRowOperator: "フィルター演算子",
+    filterRowPickValues: "値でフィルター",
+    filterRowUnsupported: "この結果はサーバー側でフィルターできません: {reason}",
     filterBuilderApplyOnly: "この条件のみで絞り込む",
     filterBuilderCompleteRuleFirst: "先にこの絞り込み条件を入力してください",
     filterBuilderEnableRule: "条件を有効化",
@@ -9998,6 +10005,8 @@ export default withEnglishFallback({
     shortcutConvertNamingStyle: "命名スタイルの切り替え",
     dataGridKeepFilterEditorExpanded: "フィルターエディターを既定で展開",
     dataGridKeepFilterEditorExpandedDescription: "条件ビューとテキストビューでエディターを初期表示時に展開します。手動で折りたたむこともできます。",
+    dataGridShowFilterRow: "列見出しの下にフィルター行を表示",
+    dataGridShowFilterRowDescription: "各列の下にフィルター欄を表示します。値を入力し、⋮ で演算子を選ぶか、漏斗ボタンで値を選択します。フィルターはデータベース上で実行されます。",
     mcpQueryTimeoutSaveStatus_saving: "保存中...",
     mcpQueryTimeoutSaveStatus_saved: "保存済み",
     mcpQueryTimeoutSaveStatus_failed: "保存失敗",

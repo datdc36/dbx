@@ -74,6 +74,8 @@ import { DATA_GRID_CLIPBOARD_BATCH_CHARS, DataGridClipboardCapacityError, dataGr
 import ProductionWatermark from "@/components/common/ProductionWatermark.vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import LightDropdownMenu from "@/components/ui/LightDropdownMenu.vue";
+import DataGridFilterRowCell from "./DataGridFilterRowCell.vue";
+import { activeDataGridFilterRowFilters, combineDataGridFilterRowConditions, dataGridFilterRowColumnKind, dataGridFilterRowConditionOptions, dataGridFilterRowSignature, type DataGridFilterRowFilter, type DataGridFilterRowFilters } from "@/lib/dataGrid/dataGridFilterRow";
 import LightTooltip from "@/components/ui/LightTooltip.vue";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -647,6 +649,13 @@ interface DataGridProps {
   exportSql?: string;
   pageSql?: string;
   onExecuteSql?: (sql: string) => Promise<void>;
+  /** Filter row entries owned by the host, so they survive a result re-run that remounts the grid. */
+  filterRowFilters?: DataGridFilterRowFilters;
+  /**
+   * Re-runs a results grid filtered on the server by `whereInput` (over the result columns).
+   * Table data filters through its own WHERE; other grids without this handler show no filter row.
+   */
+  onFilterRowApply?: (filters: DataGridFilterRowFilters, whereInput: string | undefined) => Promise<void>;
   fullExportResult?: (onProgress?: (info: { rowsExported: number; totalRows: number | null }) => void) => Promise<QueryResult | undefined>;
   captureFullExportResult?: UseDataGridExportOptions["captureFullExportResult"];
   captureQueryResultExportRequest?: UseDataGridExportOptions["captureQueryResultExportRequest"];
@@ -1370,6 +1379,68 @@ const filterModeOptions = computed(() => {
   return orderDataGridFilterModeOptions(resolvedDatabaseType.value, supportedFilterModeOptions.value);
 });
 const filterModeOrderDialogOpen = ref(false);
+
+// ---------------------------------------------------------------------------
+// Filter row (per-column filter boxes under the headers)
+// ---------------------------------------------------------------------------
+const filterRowFilters = ref<DataGridFilterRowFilters>({ ...props.filterRowFilters });
+/** Predicate of the applied filter row; table data folds it into its WHERE. */
+const filterRowWhereInput = ref<string | undefined>();
+const isApplyingFilterRow = ref(false);
+const showFilterRow = computed(() => settingsStore.editorSettings.dataGridShowFilterRow !== false && props.result.columns.length > 0 && (canUseWhereSearch.value || (isResultsContext.value && !!props.onFilterRowApply)));
+watch(
+  () => props.filterRowFilters,
+  (filters) => {
+    if (dataGridFilterRowSignature(filters ?? {}) !== dataGridFilterRowSignature(filterRowFilters.value)) filterRowFilters.value = { ...filters };
+  },
+);
+
+function filterRowColumnInfo(columnName: string, columnIndex: number) {
+  const tableColumn = props.tableMeta?.columns.find((column) => column.name === columnName);
+  if (tableColumn) return tableColumn;
+  return { name: columnName, data_type: props.result.column_types?.[columnIndex] ?? "", is_nullable: true };
+}
+
+function filterRowKind(columnName: string, columnIndex: number) {
+  return dataGridFilterRowColumnKind(filterRowColumnInfo(columnName, columnIndex).data_type, resolvedDatabaseType.value);
+}
+
+async function applyFilterRow(columnName: string, columnIndex: number, filter: DataGridFilterRowFilter | null) {
+  const next = { ...filterRowFilters.value };
+  if (filter) next[columnName] = filter;
+  else delete next[columnName];
+  if (dataGridFilterRowSignature(next) === dataGridFilterRowSignature(filterRowFilters.value)) {
+    filterRowFilters.value = next;
+    return;
+  }
+  filterRowFilters.value = next;
+  const active = activeDataGridFilterRowFilters(next);
+  const identifierQuote = connectionStore.connectionIdentifierQuote?.(props.connectionId);
+  isApplyingFilterRow.value = true;
+  try {
+    const conditions = await Promise.all(
+      Object.entries(active).map(([name, entry]) => {
+        const index = props.result.columns.indexOf(name);
+        return buildDataGridContextFilterCondition(dataGridFilterRowConditionOptions(name, entry, { databaseType: resolvedDatabaseType.value, identifierQuote, columnInfo: filterRowColumnInfo(name, index >= 0 ? index : columnIndex) }));
+      }),
+    );
+    const whereInput = combineDataGridFilterRowConditions(conditions);
+    if (canUseWhereSearch.value) {
+      filterRowWhereInput.value = whereInput;
+      await applyWhereFilter();
+    } else if (props.onFilterRowApply) {
+      await props.onFilterRowApply(active, whereInput);
+    }
+  } catch (e: any) {
+    toast(String(e?.message || e), 5000);
+  } finally {
+    isApplyingFilterRow.value = false;
+  }
+}
+
+function openFilterRowValues(columnIndex: number) {
+  openLocalFilter(columnIndex, canUseServerColumnFilter.value ? "server" : "local");
+}
 function openFilterModeOrderDialog() {
   filterModeOrderDialogOpen.value = true;
 }
@@ -3983,7 +4054,8 @@ watch(
   { immediate: true },
 );
 function currentWhereInput(): string | undefined {
-  return combineWhereInputs(whereFilterInput.value, appliedStructuredWhereInput.value);
+  const where = combineWhereInputs(whereFilterInput.value, appliedStructuredWhereInput.value);
+  return canUseWhereSearch.value ? combineWhereInputs(where, filterRowWhereInput.value) : where;
 }
 
 function effectiveOrderBy(): string | undefined {
@@ -16016,6 +16088,30 @@ useUpdateBlocker(() => (hasPendingChanges.value || hasPendingDataEditorDraft.val
                   <div class="shrink-0" :style="{ width: `${horizontalColumnWindow.afterWidth}px` }" />
                   <div v-if="gridScrollbarGutter > 0" class="shrink-0 border-l border-border w-(--grid-scrollbar-gutter)" />
                 </div>
+                <div v-if="showFilterRow" class="data-grid-filter-row flex h-7 w-(--header-total-w) border-t border-border bg-background">
+                  <div class="shrink-0 w-(--row-num-w) border-r border-border bg-background sticky left-0 z-20" />
+                  <div class="shrink-0" :style="{ width: `${horizontalColumnWindowBeforeWidth}px` }" />
+                  <div
+                    v-for="col in renderedGridColumns"
+                    :key="`filter-${col.name}-${col.actualColIdx}`"
+                    class="shrink-0 border-r border-border bg-background"
+                    :class="{ 'data-grid-filter-row-cell--frozen-separator': frozenColumnCount > 0 && col.visibleColIdx === frozenColumnCount - 1 }"
+                    :style="columnHeaderStyle(col.visibleColIdx)"
+                  >
+                    <DataGridFilterRowCell
+                      :filter="filterRowFilters[col.name]"
+                      :kind="filterRowKind(col.name, col.actualColIdx)"
+                      :mode-options="filterModeOptions"
+                      :can-pick-values="!!(canUseWhereSearch || canClientFilterResult)"
+                      :disabled="isApplyingFilterRow || !!loading"
+                      @change="(filter) => applyFilterRow(col.name, col.actualColIdx, filter)"
+                      @pick-values="openFilterRowValues(col.actualColIdx)"
+                      @focus-grid="gridRef?.focus({ preventScroll: true })"
+                    />
+                  </div>
+                  <div class="shrink-0" :style="{ width: `${horizontalColumnWindow.afterWidth}px` }" />
+                  <div v-if="gridScrollbarGutter > 0" class="shrink-0 border-l border-border w-(--grid-scrollbar-gutter)" />
+                </div>
               </div>
 
               <!-- Body wrapper: gives the vertical/horizontal scrollbars (absolutely
@@ -18109,5 +18205,8 @@ html.dbx-legacy-webview.dark .ddl-code::-webkit-scrollbar-thumb:hover {
 .ddl-code :deep(.ddl-search-match-active) {
   background: var(--data-grid-cell-current-search-bg);
   outline: 1px solid var(--data-grid-cell-current-search-border);
+}
+.data-grid-filter-row-cell--frozen-separator {
+  border-right: 2px solid rgb(100, 116, 139) !important;
 }
 </style>

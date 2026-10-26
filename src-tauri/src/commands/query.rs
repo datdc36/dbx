@@ -774,6 +774,13 @@ pub fn prepare_query_pagination_execution_plan(
 }
 
 #[tauri::command]
+pub fn build_filtered_query_sql(
+    options: dbx_core::query_result_sql::FilteredQuerySqlOptions,
+) -> Result<dbx_core::query_result_sql::QuerySqlBuildResult, String> {
+    Ok(dbx_core::query_result_sql::build_filtered_query_sql(options))
+}
+
+#[tauri::command]
 pub fn build_sorted_query_sql(
     options: dbx_core::query_result_sql::SortedQuerySqlOptions,
 ) -> Result<dbx_core::query_result_sql::QuerySqlBuildResult, String> {
@@ -1200,6 +1207,13 @@ pub fn build_data_grid_context_filter_condition(
     options: dbx_core::data_grid_sql::DataGridContextFilterConditionOptions,
 ) -> Result<Option<String>, String> {
     Ok(dbx_core::data_grid_sql::build_data_grid_context_filter_condition(options))
+}
+
+#[tauri::command]
+pub fn build_query_designer_sql(
+    options: dbx_core::query_designer_sql::QueryDesignerSqlOptions,
+) -> Result<String, String> {
+    Ok(dbx_core::query_designer_sql::build_query_designer_sql(&options))
 }
 
 #[tauri::command]

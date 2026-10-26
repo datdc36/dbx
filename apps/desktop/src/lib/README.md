@@ -12,6 +12,7 @@
 - `ai`, `mcp`: AI assistant and MCP configuration helpers.
 - `redis`, `mongo`, `elasticsearch`, `etcd`, `kv`, `mq`, `nacos`, `zookeeper`, `webdav`: non-relational or service-specific helpers.
 - `diagram`, `document`, `export`, `imports`: feature-specific utilities that are shared by more than one component.
+- `queryDesigner`: the visual query designer document model (tables, joins, column settings) and its request to the Rust SQL builder in `crates/dbx-sql-data/src/query_designer_sql.rs`.
 
 Tests under `src/lib/__tests__` mirror the same domain folders. When moving a module, update both runtime imports and colocated tests so stale root-level aliases do not return.
 

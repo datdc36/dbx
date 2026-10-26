@@ -123,6 +123,19 @@ impl QuerySortDirection {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FilteredQuerySqlOptions {
+    pub original_sql: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database_type: Option<DatabaseType>,
+    /// Result column labels; filters address them through the wrapping derived table.
+    #[serde(default)]
+    pub result_columns: Vec<String>,
+    /// Predicate over the result columns, already rendered for the dialect.
+    pub where_input: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SortedQuerySqlOptions {
     pub original_sql: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -491,30 +504,40 @@ pub fn build_count_query_sql(options: CountQuerySqlOptions) -> QuerySqlBuildResu
     ))
 }
 
-pub fn build_sorted_query_sql(options: SortedQuerySqlOptions) -> QuerySqlBuildResult {
-    let base_sql = options.original_sql.trim();
+/// The single statement a result was produced by, or the reason it cannot be wrapped
+/// (`empty`, or `multi` when the text holds several statements).
+fn single_result_statement(original_sql: &str, database_type: Option<DatabaseType>) -> Result<String, &'static str> {
+    let base_sql = original_sql.trim();
     if base_sql.is_empty() {
-        return err("empty");
+        return Err("empty");
     }
 
-    let mut statement = find_query_result_statement_at_cursor(base_sql, 0, options.database_type)
+    let mut statement = find_query_result_statement_at_cursor(base_sql, 0, database_type)
         .trim()
         .trim_end_matches(';')
         .trim()
         .to_string();
     if statement.is_empty() {
-        return err("empty");
+        return Err("empty");
     }
     let normalized_base_len = base_sql.trim_end_matches(';').trim().len();
     if statement.len() != normalized_base_len {
-        if !matches!(options.database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb)) {
-            return err("multi");
+        if !matches!(database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb)) {
+            return Err("multi");
         }
-        statement = restore_leading_execution_hint(base_sql, &statement, options.database_type);
+        statement = restore_leading_execution_hint(base_sql, &statement, database_type);
         if statement.len() != normalized_base_len {
-            return err("multi");
+            return Err("multi");
         }
     }
+    Ok(statement)
+}
+
+pub fn build_sorted_query_sql(options: SortedQuerySqlOptions) -> QuerySqlBuildResult {
+    let statement = match single_result_statement(&options.original_sql, options.database_type) {
+        Ok(statement) => statement,
+        Err(reason) => return err(reason),
+    };
     let (execution_hint, statement) =
         if matches!(options.database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb)) {
             split_leading_execution_hint(&statement, options.database_type)
@@ -712,6 +735,73 @@ pub fn build_sorted_query_sql(options: SortedQuerySqlOptions) -> QuerySqlBuildRe
             options.direction.as_sql()
         ))
     }
+}
+
+/// Wraps a result query so it can be filtered on the server:
+/// `SELECT * FROM (<query>) dbx_filter WHERE <where_input>`.
+///
+/// Reasons when it cannot: `empty`, `multi`, `not_select`, `with` (a CTE on an
+/// engine that rejects WITH inside a derived table), `duplicate_columns` (the
+/// derived table would expose ambiguous labels) and `unsupported`.
+pub fn build_filtered_query_sql(options: FilteredQuerySqlOptions) -> QuerySqlBuildResult {
+    let where_input = options.where_input.trim();
+    if where_input.is_empty() {
+        return err("empty");
+    }
+    if unsupported_pagination_type(options.database_type) {
+        return err("unsupported");
+    }
+    let statement = match single_result_statement(&options.original_sql, options.database_type) {
+        Ok(statement) => statement,
+        Err(reason) => return err(reason),
+    };
+    let (execution_hint, statement) =
+        if matches!(options.database_type, Some(DatabaseType::Mysql | DatabaseType::Goldendb)) {
+            split_leading_execution_hint(&statement, options.database_type)
+        } else {
+            ("", statement.as_str())
+        };
+    let upper = statement.trim_start().to_ascii_uppercase();
+    if upper.starts_with("WITH") {
+        // SQL Server rejects WITH inside a derived table.
+        if options.database_type == Some(DatabaseType::SqlServer)
+            || !cte_main_statement_is_select(statement)
+            || has_top_level_select_into(statement)
+        {
+            return err("with");
+        }
+    } else if !upper.starts_with("SELECT") {
+        return err("not_select");
+    } else if has_top_level_select_into(statement) {
+        return err("not_select");
+    }
+
+    let case_insensitive_labels = !matches!(
+        options.database_type,
+        Some(DatabaseType::Postgres | DatabaseType::Oracle | DatabaseType::OceanbaseOracle | DatabaseType::Dameng)
+    );
+    let has_duplicate_labels = options.result_columns.iter().enumerate().any(|(index, column)| {
+        options.result_columns[..index].iter().any(|candidate| {
+            if case_insensitive_labels {
+                candidate.eq_ignore_ascii_case(column)
+            } else {
+                candidate == column
+            }
+        })
+    });
+    if has_duplicate_labels {
+        return err("duplicate_columns");
+    }
+
+    let wrapped_statement = match options.database_type {
+        Some(DatabaseType::SqlServer) => sql_server_statement_for_derived_table(statement),
+        Some(DatabaseType::Iris) => iris_statement_for_derived_table(statement),
+        _ => statement.to_string(),
+    };
+    ok(format!(
+        "{execution_hint}{}",
+        derived_table_sql("SELECT * FROM", &wrapped_statement, &format!("dbx_filter WHERE {where_input}"))
+    ))
 }
 
 fn ok(sql: String) -> QuerySqlBuildResult {
@@ -2956,6 +3046,59 @@ fn fallback_alias(index: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    fn filtered(sql: &str, database_type: DatabaseType, columns: &[&str], where_input: &str) -> QuerySqlBuildResult {
+        build_filtered_query_sql(FilteredQuerySqlOptions {
+            original_sql: sql.to_string(),
+            database_type: Some(database_type),
+            result_columns: columns.iter().map(|column| column.to_string()).collect(),
+            where_input: where_input.to_string(),
+        })
+    }
+
+    #[test]
+    fn filtered_query_wraps_a_select_in_a_derived_table() {
+        let built =
+            filtered("SELECT id, name FROM users;", DatabaseType::Postgres, &["id", "name"], "\"name\" LIKE '%a%'");
+        assert_eq!(
+            built.sql.as_deref(),
+            Some("SELECT * FROM (SELECT id, name FROM users) dbx_filter WHERE \"name\" LIKE '%a%'")
+        );
+    }
+
+    #[test]
+    fn filtered_query_keeps_ctes_except_on_sql_server() {
+        let sql = "WITH t AS (SELECT 1 AS a) SELECT a FROM t";
+        assert_eq!(
+            filtered(sql, DatabaseType::Postgres, &["a"], "\"a\" = 1").sql.as_deref(),
+            Some("SELECT * FROM (WITH t AS (SELECT 1 AS a) SELECT a FROM t) dbx_filter WHERE \"a\" = 1")
+        );
+        assert_eq!(filtered(sql, DatabaseType::SqlServer, &["a"], "[a] = 1").reason.as_deref(), Some("with"));
+    }
+
+    #[test]
+    fn filtered_query_rejects_what_cannot_be_wrapped() {
+        assert_eq!(
+            filtered("SELECT 1; SELECT 2", DatabaseType::Postgres, &["x"], "1 = 1").reason.as_deref(),
+            Some("multi")
+        );
+        assert_eq!(
+            filtered("UPDATE t SET a = 1", DatabaseType::Postgres, &["a"], "1 = 1").reason.as_deref(),
+            Some("not_select")
+        );
+        assert_eq!(
+            filtered("SELECT a, A FROM t", DatabaseType::Mysql, &["a", "A"], "1 = 1").reason.as_deref(),
+            Some("duplicate_columns")
+        );
+        assert!(filtered("SELECT a, A FROM t", DatabaseType::Postgres, &["a", "A"], "1 = 1").ok);
+        assert_eq!(filtered("SELECT 1", DatabaseType::Postgres, &["x"], "  ").reason.as_deref(), Some("empty"));
+    }
+
+    #[test]
+    fn filtered_query_strips_sql_server_order_by_inside_the_derived_table() {
+        let built = filtered("SELECT a FROM t ORDER BY a", DatabaseType::SqlServer, &["a"], "[a] > 1");
+        assert_eq!(built.sql.as_deref(), Some("SELECT * FROM (SELECT a FROM t) dbx_filter WHERE [a] > 1"));
+    }
+
     fn oceanbase_plan(sql: &str, limit: usize, offset: usize, cursor: bool) -> QueryPaginationExecutionPlan {
         build_query_pagination_execution_plan(QueryPaginationExecutionPlanOptions {
             sql: sql.into(),

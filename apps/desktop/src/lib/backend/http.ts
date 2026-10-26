@@ -251,6 +251,7 @@ import type {
   QueryPaginationExecutionPlanOptions,
   QueryPaginationExecutionPlan,
   SortedQuerySqlOptions,
+  FilteredQuerySqlOptions,
   QuerySqlBuildResult,
   BuildExplainSqlOptions,
   ExplainSqlBuildResult,
@@ -291,6 +292,7 @@ import type {
   DataGridSaveStatementOptions,
   HiveTablePropertiesSqlOptions,
 } from "@/lib/dataGrid/dataGridSql";
+import type { QueryDesignerSqlOptions } from "@/lib/queryDesigner/queryDesignerModel";
 import type { DmlChangePreviewSqlOptions, DmlChangePreviewSqlResult } from "@/lib/sql/dmlChangePreview";
 import type { DataGridExtractRequest, DataGridExtractResult } from "@/lib/dataGrid/dataGridCopyExtractor";
 import type {
@@ -1971,6 +1973,10 @@ export async function buildSortedQuerySql(options: SortedQuerySqlOptions): Promi
   return post("/api/query/build-sorted-sql", { options });
 }
 
+export async function buildFilteredQuerySql(options: FilteredQuerySqlOptions): Promise<QuerySqlBuildResult> {
+  return post("/api/query/build-filtered-sql", { options });
+}
+
 export async function buildExplainSql(options: BuildExplainSqlOptions): Promise<ExplainSqlBuildResult> {
   return post("/api/query/build-explain-sql", { options });
 }
@@ -2258,6 +2264,10 @@ export async function buildDataGridCopyInsertStatement(options: DataGridCopyInse
 
 export async function buildDmlChangePreviewSql(options: DmlChangePreviewSqlOptions): Promise<DmlChangePreviewSqlResult> {
   return post("/api/query/build-dml-change-preview-sql", { options });
+}
+
+export async function buildQueryDesignerSql(options: QueryDesignerSqlOptions): Promise<string> {
+  return post<string>("/api/query/build-query-designer-sql", { options });
 }
 
 export async function buildDataGridContextFilterCondition(options: DataGridContextFilterConditionOptions): Promise<string | undefined> {

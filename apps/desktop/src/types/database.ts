@@ -2513,6 +2513,12 @@ export interface DatabaseSearchResultItem {
   structureMatchIn?: Array<"name" | "comment" | "tableComment">;
 }
 
+export interface QueryDesignerTabState {
+  design: import("@/lib/queryDesigner/queryDesignerModel").QueryDesignerState;
+  /** Tables to load onto the canvas when the tab first mounts (e.g. "Design Query" on a table). */
+  pendingTables?: { schema?: string; tableName: string }[];
+}
+
 export interface DatabaseSearchTableTask {
   schema?: string;
   table: TableInfo;
@@ -2730,7 +2736,8 @@ export interface QueryTab {
     | "dolt-version-control"
     | "plugin-workbench"
     | "plugin-filesystem"
-    | "database-search";
+    | "database-search"
+    | "query-designer";
   pluginWorkbench?: {
     /** Host command that created this tab; distinct commands can share a workbench. */
     commandId?: string;
@@ -2780,6 +2787,9 @@ export interface QueryTab {
   };
   structureDraft?: TableStructureEditorDraft;
   databaseSearchState?: DatabaseSearchTabState;
+  queryDesigner?: QueryDesignerTabState;
+  /** Filter row applied to a query result: `filteredSql` wraps `baseSql`; stale once another query runs. */
+  resultFilterRow?: { baseSql: string; filteredSql: string; filters: import("@/lib/dataGrid/dataGridFilterRow").DataGridFilterRowFilters };
   objectBrowser?: {
     catalog?: string;
     schema?: string;

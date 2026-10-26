@@ -127,6 +127,12 @@ pub struct BuildSortedQuerySqlRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BuildFilteredQuerySqlRequest {
+    pub options: dbx_core::query_result_sql::FilteredQuerySqlOptions,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BuildExplainSqlRequest {
     pub options: dbx_core::query_execution_sql::ExplainSqlOptions,
 }
@@ -427,6 +433,12 @@ pub struct BuildDmlChangePreviewSqlRequest {
 #[serde(rename_all = "camelCase")]
 pub struct BuildDataGridContextFilterConditionRequest {
     pub options: dbx_core::data_grid_sql::DataGridContextFilterConditionOptions,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildQueryDesignerSqlRequest {
+    pub options: dbx_core::query_designer_sql::QueryDesignerSqlOptions,
 }
 
 #[derive(Deserialize)]
@@ -1078,6 +1090,12 @@ pub async fn prepare_query_pagination_execution_plan(
     Json(dbx_core::query_result_sql::build_query_pagination_execution_plan(req.options))
 }
 
+pub async fn build_filtered_query_sql(
+    Json(req): Json<BuildFilteredQuerySqlRequest>,
+) -> Json<dbx_core::query_result_sql::QuerySqlBuildResult> {
+    Json(dbx_core::query_result_sql::build_filtered_query_sql(req.options))
+}
+
 pub async fn build_sorted_query_sql(
     Json(req): Json<BuildSortedQuerySqlRequest>,
 ) -> Json<dbx_core::query_result_sql::QuerySqlBuildResult> {
@@ -1594,6 +1612,10 @@ pub async fn build_data_grid_context_filter_condition(
     Json(req): Json<BuildDataGridContextFilterConditionRequest>,
 ) -> Json<Option<String>> {
     Json(dbx_core::data_grid_sql::build_data_grid_context_filter_condition(req.options))
+}
+
+pub async fn build_query_designer_sql(Json(req): Json<BuildQueryDesignerSqlRequest>) -> Json<String> {
+    Json(dbx_core::query_designer_sql::build_query_designer_sql(&req.options))
 }
 
 pub async fn build_data_grid_column_value_filter_condition(

@@ -8,6 +8,7 @@ import { damengDumpZhTW as damengDump } from "./damengDump";
 import { meilisearchManagementZhTW } from "./meilisearchManagement";
 import docs from "./docs/zh-TW";
 import { dataDictionaryZhTW as dataDictionary } from "./dataDictionaryMessages";
+import { queryDesignerZhTW as queryDesigner } from "./queryDesignerMessages";
 import { consulZhTWMessages } from "./consulZhTW";
 import { nacosAccessControlMessages, nacosAccessControlTabs } from "./nacosAccessControl";
 import { sqlServerTraceMessages as sqlServerTrace } from "./sqlServerTraceMessages";
@@ -587,6 +588,7 @@ export default withEnglishFallback({
   },
   docs,
   dataDictionary,
+  queryDesigner,
   pluginPlatform: {
     dataAccessConsent: "「{name}」請求讀取連線「{connection}」中的資料。在該連線開啟期間，外掛可以對它執行唯讀查詢，直到你在外掛中心撤銷授權。是否允許？",
     dataAccessConsentTitle: "資料存取請求",
@@ -2729,6 +2731,11 @@ export default withEnglishFallback({
     filterSqlCopied: "SQL 條件已複製",
     filterBuilderSummary: "{count} 條規則",
     filterBuilderAddRule: "新增條件",
+    filterRowPlaceholder: "篩選",
+    filterRowRangeEnd: "至",
+    filterRowOperator: "篩選運算子",
+    filterRowPickValues: "依值篩選",
+    filterRowUnsupported: "此結果無法在伺服器端篩選：{reason}",
     filterBuilderApplyOnly: "僅篩選此項",
     filterBuilderCompleteRuleFirst: "請先補齊此篩選條件",
     filterBuilderEnableRule: "啟用條件",
@@ -9096,6 +9103,8 @@ export default withEnglishFallback({
     shortcutConvertNamingStyle: "切換命名風格",
     dataGridKeepFilterEditorExpanded: "預設展開篩選編輯器",
     dataGridKeepFilterEditorExpandedDescription: "在條件檢視和文字檢視中初始展開編輯器；仍可手動收合。",
+    dataGridShowFilterRow: "在欄位標題下顯示篩選列",
+    dataGridShowFilterRowDescription: "每個欄位下方顯示篩選框：輸入值，從 ⋮ 選擇運算子，或用漏斗按鈕選擇值。篩選在資料庫上執行。",
     mcpQueryTimeoutSaveStatus_saving: "儲存中...",
     mcpQueryTimeoutSaveStatus_saved: "已儲存",
     mcpQueryTimeoutSaveStatus_failed: "儲存失敗",

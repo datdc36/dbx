@@ -128,6 +128,21 @@ export function useSidebarTreeToolRuntime(options: SidebarTreeToolRuntimeOptions
     queryStore.openDatabaseSearch(node.connectionId, node.database, node.type === "schema" ? node.schema : undefined);
   }
 
+  function openQueryDesigner() {
+    const node = activeNode.value;
+    if (!node.connectionId || !node.database) return;
+    const isObject = node.type === "table" || node.type === "view";
+    const targets = isObject ? selectedSameSchemaStructureTargets().filter((target) => target.type === "table" || target.type === "view") : [];
+    const tableNames = isObject ? (targets.length > 1 ? targets.map((target) => target.label) : [node.label]) : [];
+    queryStore.openQueryDesigner(
+      node.connectionId,
+      node.database,
+      node.schema,
+      tableNames.map((tableName) => ({ schema: node.schema, tableName })),
+      node.catalog,
+    );
+  }
+
   function openDatabaseExport() {
     const node = activeNode.value;
     const tables = selectedSameSchemaStructureTargets().filter((target) => target.type === "table");
@@ -238,6 +253,7 @@ export function useSidebarTreeToolRuntime(options: SidebarTreeToolRuntimeOptions
     openDataCompare,
     openDatabaseExport,
     openDatabaseSearch,
+    openQueryDesigner,
     openDataDictionary,
     openDiagram,
     openDocs,

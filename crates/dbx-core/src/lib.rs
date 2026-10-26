@@ -48,6 +48,7 @@ pub use dbx_sql::database_search_columns_sql;
 pub use dbx_sql::database_search_probe_sql;
 pub use dbx_sql::database_search_sql;
 pub use dbx_sql::database_structure_search_sql;
+pub use dbx_sql::query_designer_sql;
 pub use dbx_types::database_manifest;
 pub mod db;
 #[cfg(feature = "mq-admin")]

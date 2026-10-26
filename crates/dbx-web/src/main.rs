@@ -882,6 +882,7 @@ async fn serve() -> Result<(), String> {
         .route("/query/find-statement-at-cursor", post(routes::query::find_statement_at_cursor))
         .route("/query/prepare-pagination-plan", post(routes::query::prepare_query_pagination_execution_plan))
         .route("/query/build-sorted-sql", post(routes::query::build_sorted_query_sql))
+        .route("/query/build-filtered-sql", post(routes::query::build_filtered_query_sql))
         .route("/query/build-explain-sql", post(routes::query::build_explain_sql))
         .route("/query/build-dropped-file-preview-sql", post(routes::query::build_dropped_file_preview_sql))
         .route("/query/get-explain-info", post(routes::query::get_explain_info))
@@ -974,6 +975,7 @@ async fn serve() -> Result<(), String> {
             "/query/build-data-grid-context-filter-condition",
             post(routes::query::build_data_grid_context_filter_condition),
         )
+        .route("/query/build-query-designer-sql", post(routes::query::build_query_designer_sql))
         .route(
             "/query/build-data-grid-column-value-filter-condition",
             post(routes::query::build_data_grid_column_value_filter_condition),

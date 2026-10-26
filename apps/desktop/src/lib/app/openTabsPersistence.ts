@@ -72,6 +72,8 @@ export interface SavedOpenTab {
   structureExactIdentity?: boolean;
   structureDraft?: QueryTab["structureDraft"];
   databaseSearchState?: QueryTab["databaseSearchState"];
+  queryDesigner?: QueryTab["queryDesigner"];
+  resultFilterRow?: QueryTab["resultFilterRow"];
   objectBrowser?: QueryTab["objectBrowser"];
   objectSource?: QueryTab["objectSource"];
   typeManagementDraft?: QueryTab["typeManagementDraft"];
@@ -225,6 +227,8 @@ export function serializeOpenTabs(tabs: QueryTab[]): SavedOpenTab[] {
     ...(tab.structureExactIdentity ? { structureExactIdentity: true } : {}),
     ...(tab.structureDraft ? { structureDraft: JSON.parse(JSON.stringify(tab.structureDraft)) } : {}),
     ...(tab.databaseSearchState ? { databaseSearchState: tab.databaseSearchState } : {}),
+    ...(tab.queryDesigner ? { queryDesigner: tab.queryDesigner } : {}),
+    ...(tab.resultFilterRow ? { resultFilterRow: tab.resultFilterRow } : {}),
     objectBrowser: tab.objectBrowser,
     objectSource: tab.objectSource,
     ...(tab.typeManagementDraft ? { typeManagementDraft: JSON.parse(JSON.stringify(tab.typeManagementDraft)) } : {}),

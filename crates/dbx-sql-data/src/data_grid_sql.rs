@@ -829,6 +829,28 @@ pub fn build_data_grid_context_filter_condition(options: DataGridContextFilterCo
         options.column_info.as_ref(),
         options.identifier_quote.as_deref(),
     );
+    build_data_grid_context_filter_condition_for_refs(&options, &column, &like_column)
+}
+
+/// Same predicate as `build_data_grid_context_filter_condition`, but applied to an already rendered SQL
+/// expression (a qualified column, an aggregate or a user expression) instead of a bare column name.
+pub fn build_data_grid_context_filter_condition_for_expression(
+    options: &DataGridContextFilterConditionOptions,
+    expression: &str,
+) -> Option<String> {
+    if !supports_data_grid_context_filter_mode(options.database_type, options.mode) {
+        return None;
+    }
+
+    let like_expression = like_filter_ref(options.database_type, expression, options.column_info.as_ref());
+    build_data_grid_context_filter_condition_for_refs(options, expression, &like_expression)
+}
+
+fn build_data_grid_context_filter_condition_for_refs(
+    options: &DataGridContextFilterConditionOptions,
+    column: &str,
+    like_column: &str,
+) -> Option<String> {
     let value = &options.value;
     match options.mode {
         DataGridContextFilterMode::IsNull => Some(format!("{column} IS NULL")),
@@ -4616,7 +4638,11 @@ pub fn qualified_table_name(database_type: Option<DatabaseType>, schema: Option<
     crate::sql_dialect::qualified_table_name(database_type, schema, table_name)
 }
 
-fn data_grid_identifier(database_type: Option<DatabaseType>, name: &str, identifier_quote: Option<&str>) -> String {
+pub(crate) fn data_grid_identifier(
+    database_type: Option<DatabaseType>,
+    name: &str,
+    identifier_quote: Option<&str>,
+) -> String {
     if database_type == Some(DatabaseType::Iris) {
         return crate::sql_dialect::quote_iris_identifier(name, identifier_quote);
     }
@@ -4712,12 +4738,20 @@ fn column_like_filter_ref(
     identifier_quote: Option<&str>,
 ) -> String {
     let column = column_filter_ref(database_type, column_name, identifier_quote);
+    like_filter_ref(database_type, &column, column_info)
+}
+
+fn like_filter_ref(
+    database_type: Option<DatabaseType>,
+    column: &str,
+    column_info: Option<&DataGridColumnInfo>,
+) -> String {
     if is_postgres_like_pattern_database(database_type)
         && column_info.map(|column_info| !is_textual_column_type(&column_info.data_type)).unwrap_or(true)
     {
         format!("{column}::text")
     } else {
-        column
+        column.to_string()
     }
 }
 

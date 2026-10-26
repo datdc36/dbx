@@ -2,6 +2,7 @@ import type { ConnectionConfig, ObjectBrowserFilter, ObjectBrowserViewport, Quer
 import type { NavigationTarget } from "@/composables/useNavigationTargets";
 import type { DataGridReloadIntent } from "@/lib/dataGrid/dataGridToolbar";
 import type { DataGridSortMode } from "@/lib/dataGrid/dataGridSort";
+import type { DataGridFilterRowFilters } from "@/lib/dataGrid/dataGridFilterRow";
 import type { SqlObjectNavigationTarget } from "@/lib/sql/sqlNavigation";
 import type { SqlExecutionOverride, SqlExecutionSnapshot } from "@/lib/sql/sqlExecutionTarget";
 import type { AiConversationBinding } from "@/lib/ai/aiConversationBinding";
@@ -104,6 +105,7 @@ export interface ContentAreaSurfaceEmits {
   reload: [tabId: string, sql?: string, searchText?: string, whereInput?: string, orderBy?: string, limit?: number, offset?: number, intent?: DataGridReloadIntent];
   paginate: [tabId: string, offset: number, limit: number, whereInput?: string, orderBy?: string, appendResult?: boolean];
   sort: [tabId: string, column: string, columnIndex: number, direction: "asc" | "desc" | null, whereInput?: string, mode?: DataGridSortMode, effectiveOrderBy?: string];
+  filterResults: [tabId: string, filters: DataGridFilterRowFilters, whereInput: string | undefined];
   executeSql: [tabId: string, sql: string];
   clickTable: [tabId: string, target: SqlObjectNavigationTarget];
   viewTableData: [tabId: string, target: SqlObjectNavigationTarget];

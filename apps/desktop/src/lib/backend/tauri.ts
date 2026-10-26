@@ -213,6 +213,7 @@ import type {
   DataGridSaveStatementOptions,
   HiveTablePropertiesSqlOptions,
 } from "@/lib/dataGrid/dataGridSql";
+import type { QueryDesignerSqlOptions } from "@/lib/queryDesigner/queryDesignerModel";
 import type { DmlChangePreviewSqlOptions, DmlChangePreviewSqlResult } from "@/lib/sql/dmlChangePreview";
 import type { DataGridExtractRequest, DataGridExtractResult } from "@/lib/dataGrid/dataGridCopyExtractor";
 import type { DataCompareFromTablesOptions, DataCompareFromTablesPreparation, DataCompareSyncPlan, DataCompareSyncPlanOptions, DataComparePreparation, DataComparePreparationOptions } from "@/lib/dataGrid/dataCompare";
@@ -644,10 +645,17 @@ export interface SortedQuerySqlOptions {
   tieBreakerColumnIndexes?: number[];
 }
 
+export interface FilteredQuerySqlOptions {
+  originalSql: string;
+  databaseType?: DatabaseType;
+  resultColumns: string[];
+  whereInput: string;
+}
+
 export interface QuerySqlBuildResult {
   ok: boolean;
   sql?: string;
-  reason?: "empty" | "multi" | "not_select" | "unsupported" | "with";
+  reason?: "empty" | "multi" | "not_select" | "unsupported" | "with" | "duplicate_columns";
 }
 
 export interface BuildExplainSqlOptions {
@@ -2416,6 +2424,10 @@ export async function buildSortedQuerySql(options: SortedQuerySqlOptions): Promi
   return invoke("build_sorted_query_sql", { options });
 }
 
+export async function buildFilteredQuerySql(options: FilteredQuerySqlOptions): Promise<QuerySqlBuildResult> {
+  return invoke("build_filtered_query_sql", { options });
+}
+
 export async function buildExplainSql(options: BuildExplainSqlOptions): Promise<ExplainSqlBuildResult> {
   return invoke("build_explain_sql", { options });
 }
@@ -2730,6 +2742,10 @@ export async function buildDataGridCopyUpdateStatements(options: DataGridCopyUpd
 export async function buildDataGridCopyInsertStatement(options: DataGridCopyInsertStatementOptions): Promise<string | undefined> {
   const result = await invoke<string | null>("build_data_grid_copy_insert_statement", { options });
   return result ?? undefined;
+}
+
+export async function buildQueryDesignerSql(options: QueryDesignerSqlOptions): Promise<string> {
+  return invoke<string>("build_query_designer_sql", { options });
 }
 
 export async function buildDataGridContextFilterCondition(options: DataGridContextFilterConditionOptions): Promise<string | undefined> {

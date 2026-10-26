@@ -21,6 +21,7 @@ import type {
   BatchStatementExecutionItem,
   ConnectionConfig,
   DatabaseSearchTabState,
+  QueryDesignerTabState,
   DatabaseType,
   IndexInfo,
   NacosConfigEditorViewport,
@@ -2927,6 +2928,8 @@ export const useQueryStore = defineStore("query", () => {
       structureDraft: t.structureDraft,
       objectBrowser: t.objectBrowser,
       objectSource: t.objectSource,
+      queryDesigner: t.queryDesigner,
+      resultFilterRow: t.resultFilterRow,
       typeManagementDraft: t.typeManagementDraft,
       sourceView: t.sourceView,
       objectDetails: t.objectDetails,
@@ -3908,6 +3911,31 @@ export const useQueryStore = defineStore("query", () => {
       databaseSearchState: initialState,
     };
     return registerOpenTab(tab);
+  }
+
+  /** Each call opens a new designer, like a new query tab; `tables` are placed on its canvas. */
+  function openQueryDesigner(connectionId: string, database: string, schema?: string, tables?: { schema?: string; tableName: string }[], catalog?: string) {
+    const tab: QueryTab = {
+      id: uuid(),
+      title: "Query Designer",
+      connectionId,
+      database,
+      schema,
+      catalog,
+      sql: "",
+      isExecuting: false,
+      isCancelling: false,
+      isExplaining: false,
+      mode: "query-designer",
+      queryDesigner: { design: { tables: [], references: [], columns: [] }, pendingTables: tables?.length ? tables : undefined },
+    };
+    return registerOpenTab(tab);
+  }
+
+  function updateQueryDesignerState(id: string, state: QueryDesignerTabState) {
+    const tab = tabs.value.find((t) => t.id === id);
+    if (!tab || tab.mode !== "query-designer") return;
+    tab.queryDesigner = state;
   }
 
   function openDatabaseBrowser(connectionId: string) {
@@ -11755,6 +11783,7 @@ export const useQueryStore = defineStore("query", () => {
     updateObjectBrowserSearch,
     updateObjectBrowserFilter,
     updateDatabaseSearchState,
+    updateQueryDesignerState,
     updateNacosConfigEditorViewport,
     setAutoCommit,
     markManualTransactionDirty,
@@ -11765,6 +11794,7 @@ export const useQueryStore = defineStore("query", () => {
     setTabTitleSuffix,
     openDatabaseBrowser,
     openDatabaseSearch,
+    openQueryDesigner,
     openDriverProfileWorkspace,
     openObjectBrowser,
     openObjectProperties,

@@ -146,6 +146,7 @@ const NacosAccessControlConsole = defineAsyncComponent(() => import("@/component
 const NacosDashboard = defineAsyncComponent(() => import("@/components/nacos/NacosDashboard.vue"));
 const DoltVersionControl = defineAsyncComponent(() => import("@/components/dolt/DoltVersionControl.vue"));
 const DatabaseSearchPanel = defineAsyncComponent(() => import("@/components/search/DatabaseSearchPanel.vue"));
+const QueryDesignerPanel = defineAsyncComponent(() => import("@/components/queryDesigner/QueryDesignerPanel.vue"));
 const DatabaseBrowser = defineAsyncComponent(() => import("@/components/objects/DatabaseBrowser.vue"));
 const ObjectBrowser = defineAsyncComponent(() => import("@/components/objects/ObjectBrowser.vue"));
 const TableStructureEditor = defineAsyncComponent(() => import("@/components/structure/TableStructureEditor.vue"));
@@ -180,6 +181,7 @@ import {
   databaseDisplayNameForTab,
   executionSummaryItems,
   isPreviewTab,
+  queryResultBaseSql,
   queryResultExecutionSql,
   resultGridCacheKey,
   resultGridColumnWidthCacheKey,
@@ -213,6 +215,7 @@ import { applyMongoGridChangesToDocument, applyMongoGridChangesToDocumentBaselin
 import { buildMongoQueryResultOperations, formatMongoQueryResultOperationPreview } from "@/lib/mongo/mongoQueryResultEditing";
 import { buildInfluxDbV1DeleteStatements, canDeleteInfluxDbV1Row, resolveInfluxDbV1DeleteTarget } from "@/lib/influxdb/influxDbV1Delete";
 import type { DataGridSortMode } from "@/lib/dataGrid/dataGridSort";
+import type { DataGridFilterRowFilters } from "@/lib/dataGrid/dataGridFilterRow";
 import { isDataGridToolbarCompact, type DataGridReloadIntent, type DataGridToolbarActionCapability } from "@/lib/dataGrid/dataGridToolbar";
 import { useTabScroll } from "@/composables/useTabScroll";
 import { useToolbarOverflow } from "@/composables/useToolbarOverflow";
@@ -851,6 +854,14 @@ function loadQueryResultForTransfer(): Promise<QueryResult | undefined> {
   return queryResultTransferSourceTabId.value === props.activeTab.id ? fetchGridResultForExport(undefined, true, queryResultTransferSourceTabId.value) : Promise.resolve(undefined);
 }
 const activeResultSql = computed(() => resultSqlForGrid(props.activeTab));
+/** The filter row only belongs to the result it produced; a new run shows an empty row. */
+const activeResultFilterRowFilters = computed(() => {
+  const state = props.activeTab.resultFilterRow;
+  return state && state.filteredSql === queryResultBaseSql(props.activeTab) ? state.filters : undefined;
+});
+async function filterQueryResult(filters: DataGridFilterRowFilters, whereInput: string | undefined) {
+  emit("filterResults", props.activeTab.id, filters, whereInput);
+}
 const activeResultExportSql = computed(() => queryResultExecutionSql(props.activeTab));
 const activeResultSourceAnalysis = computed(() => analyzeEditableQuery(activeResultExportSql.value));
 const activeResultSourceTable = computed(() => {
@@ -3020,6 +3031,8 @@ defineExpose({
                 :database-sort-enabled="!hasNeo4jNodes"
                 :initial-order-by-input="activeTab.orderByInput"
                 :sql="activeResultSql"
+                :filter-row-filters="activeResultFilterRowFilters"
+                :on-filter-row-apply="filterQueryResult"
                 :export-sql="activeResultExportSql"
                 :page-sql="activeTab.resultPageSql"
                 :loading="activeResultIsLoading"
@@ -3812,6 +3825,22 @@ defineExpose({
           :connection-id="activeTab.connectionId || undefined"
           :root-uri="activeTab.pluginFilesystem.rootUri"
           :initial-uri="activeTab.pluginFilesystem.currentUri"
+        />
+      </div>
+    </template>
+    <!-- Query Designer mode -->
+    <template v-else-if="activeTab.mode === 'query-designer'">
+      <div class="min-w-0 flex-1 min-h-0">
+        <QueryDesignerPanel
+          :key="activeTab.id"
+          :tab-id="activeTab.id"
+          :connection-id="activeTab.connectionId"
+          :database="activeTab.database"
+          :schema="activeTab.schema"
+          :catalog="activeTab.catalog"
+          :initial-state="activeTab.queryDesigner"
+          @update:state="(state) => queryStore.updateQueryDesignerState(activeTab.id, state)"
+          @open-sql="(sql) => queryStore.createTab(activeTab.connectionId, activeTab.database, undefined, 'query', activeTab.schema, sql, activeTab.catalog, { forceNew: true })"
         />
       </div>
     </template>
