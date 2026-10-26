@@ -5,9 +5,34 @@ import { EllipsisVertical, Filter, X } from "@lucide/vue";
 import LightDropdownMenu, { type LightDropdownMenuItem } from "@/components/ui/LightDropdownMenu.vue";
 import { filterModeNeedsValue, filterModeUsesList, filterModeUsesRange, formatFilterRawValues } from "@/lib/dataGrid/dataGridColumnFilter";
 import type { DataGridContextFilterMode } from "@/lib/dataGrid/dataGridSql";
-import { dataGridFilterRowModeApplies, dataGridFilterRowPastedValues, defaultDataGridFilterRowMode, isDataGridFilterRowFilterActive, type DataGridFilterRowColumnKind, type DataGridFilterRowFilter } from "@/lib/dataGrid/dataGridFilterRow";
+import {
+  DATA_GRID_FILTER_ROW_DATE_PRESET_GROUPS,
+  dataGridFilterRowModeApplies,
+  dataGridFilterRowPastedValues,
+  defaultDataGridFilterRowMode,
+  isDataGridFilterRowFilterActive,
+  type DataGridFilterRowColumnKind,
+  type DataGridFilterRowDatePreset,
+  type DataGridFilterRowFilter,
+} from "@/lib/dataGrid/dataGridFilterRow";
 
 const CLEAR = "__clear";
+const PRESET_PREFIX = "preset:";
+
+/** Date columns get DbGate-style wording: a date-only value always means the whole day. */
+const DATETIME_MODE_LABEL_KEYS: Partial<Record<DataGridContextFilterMode, string>> = {
+  equals: "grid.filterRowOnDate",
+  "less-than-or-equal": "grid.filterRowOnOrBefore",
+  "greater-than-or-equal": "grid.filterRowOnOrAfter",
+  between: "grid.filterBuilderBetween",
+  "is-null": "grid.filterBuilderIsNull",
+  "is-not-null": "grid.filterBuilderIsNotNull",
+};
+const DATETIME_VALUE_MODES: DataGridContextFilterMode[] = ["equals", "less-than-or-equal", "greater-than-or-equal", "between"];
+
+function presetLabelKey(preset: DataGridFilterRowDatePreset): string {
+  return `grid.filterRowPreset.${preset.replace(/-(\w)/g, (_, letter: string) => letter.toUpperCase())}`;
+}
 
 const props = defineProps<{
   /** The applied filter for this column, if any. */
@@ -31,6 +56,7 @@ const { t } = useI18n();
 const mode = ref<DataGridContextFilterMode>(props.filter?.mode ?? defaultDataGridFilterRowMode(props.kind));
 const draftValue = ref(props.filter?.rawValue ?? "");
 const draftEndValue = ref(props.filter?.rawEndValue ?? "");
+const preset = ref<DataGridFilterRowDatePreset | undefined>(props.filter?.preset);
 const menuOpen = ref(false);
 
 watch(
@@ -39,27 +65,39 @@ watch(
     mode.value = filter?.mode ?? defaultDataGridFilterRowMode(props.kind);
     draftValue.value = filter?.rawValue ?? "";
     draftEndValue.value = filter?.rawEndValue ?? "";
+    preset.value = filter?.preset;
   },
 );
 
 const applicableModes = computed(() => props.modeOptions.filter((option) => dataGridFilterRowModeApplies(option.value, props.kind)));
-const needsValue = computed(() => filterModeNeedsValue(mode.value));
-const usesRange = computed(() => filterModeUsesRange(mode.value));
+const needsValue = computed(() => !preset.value && filterModeNeedsValue(mode.value));
+const usesRange = computed(() => !preset.value && filterModeUsesRange(mode.value));
 const isActive = computed(() => isDataGridFilterRowFilterActive(props.filter));
-const modeLabel = computed(() => {
-  const option = props.modeOptions.find((candidate) => candidate.value === mode.value);
-  return option ? t(option.labelKey) : mode.value;
-});
+function labelForMode(value: DataGridContextFilterMode): string {
+  const dateKey = props.kind === "datetime" ? DATETIME_MODE_LABEL_KEYS[value] : undefined;
+  if (dateKey) return t(dateKey);
+  const option = props.modeOptions.find((candidate) => candidate.value === value);
+  return option ? t(option.labelKey) : value;
+}
+const modeLabel = computed(() => (preset.value ? t(presetLabelKey(preset.value)) : labelForMode(mode.value)));
 const placeholder = computed(() => {
   if (!props.filter && mode.value === defaultDataGridFilterRowMode(props.kind)) return t("grid.filterRowPlaceholder");
   return filterModeUsesList(mode.value) ? `${modeLabel.value}: a, b, c` : modeLabel.value;
 });
-const menuItems = computed<LightDropdownMenuItem[]>(() => [
+const datetimeMenuItems = computed<LightDropdownMenuItem[]>(() => [
   { label: t("grid.clearFilter"), value: CLEAR, icon: X, disabled: !props.filter },
-  ...applicableModes.value.map((option, index) => ({ label: t(option.labelKey), value: option.value, separatorBefore: index === 0, checked: option.value === mode.value })),
+  ...(["is-null", "is-not-null"] as const).map((value, index) => ({ label: labelForMode(value), value, separatorBefore: index === 0, checked: !preset.value && mode.value === value })),
+  ...DATA_GRID_FILTER_ROW_DATE_PRESET_GROUPS.flatMap((group) => group.map((value, index) => ({ label: t(presetLabelKey(value)), value: `${PRESET_PREFIX}${value}`, separatorBefore: index === 0, checked: preset.value === value }))),
+  ...DATETIME_VALUE_MODES.map((value, index) => ({ label: `${labelForMode(value)}…`, value, separatorBefore: index === 0, checked: !preset.value && mode.value === value })),
 ]);
+const menuItems = computed<LightDropdownMenuItem[]>(() =>
+  props.kind === "datetime"
+    ? datetimeMenuItems.value
+    : [{ label: t("grid.clearFilter"), value: CLEAR, icon: X, disabled: !props.filter }, ...applicableModes.value.map((option, index) => ({ label: t(option.labelKey), value: option.value, separatorBefore: index === 0, checked: option.value === mode.value }))],
+);
 
 function commit(nextMode = mode.value) {
+  if (preset.value) return;
   const filter: DataGridFilterRowFilter = { mode: nextMode, rawValue: filterModeNeedsValue(nextMode) ? draftValue.value : "", rawEndValue: filterModeUsesRange(nextMode) ? draftEndValue.value : "" };
   if (!isDataGridFilterRowFilterActive(filter)) {
     if (props.filter) emit("change", null);
@@ -72,12 +110,20 @@ function commit(nextMode = mode.value) {
 function clear() {
   draftValue.value = "";
   draftEndValue.value = "";
+  preset.value = undefined;
   mode.value = defaultDataGridFilterRowMode(props.kind);
   if (props.filter) emit("change", null);
 }
 
 function selectMenuItem(value: string) {
   if (value === CLEAR) return clear();
+  if (value.startsWith(PRESET_PREFIX)) {
+    preset.value = value.slice(PRESET_PREFIX.length) as DataGridFilterRowDatePreset;
+    mode.value = "between";
+    if (props.filter?.preset !== preset.value) emit("change", { mode: "between", rawValue: "", rawEndValue: "", preset: preset.value });
+    return;
+  }
+  preset.value = undefined;
   mode.value = value as DataGridContextFilterMode;
   // Value-less operators (is null …) apply at once; the others wait for a value.
   commit(mode.value);
@@ -97,6 +143,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 function onPaste(event: ClipboardEvent) {
+  if (preset.value) return;
   const values = dataGridFilterRowPastedValues(event.clipboardData?.getData("text/plain") ?? "");
   if (!values) return;
   event.preventDefault();

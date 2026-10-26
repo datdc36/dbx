@@ -75,7 +75,7 @@ import ProductionWatermark from "@/components/common/ProductionWatermark.vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import LightDropdownMenu from "@/components/ui/LightDropdownMenu.vue";
 import DataGridFilterRowCell from "./DataGridFilterRowCell.vue";
-import { activeDataGridFilterRowFilters, combineDataGridFilterRowConditions, dataGridFilterRowColumnKind, dataGridFilterRowConditionOptions, dataGridFilterRowSignature, type DataGridFilterRowFilter, type DataGridFilterRowFilters } from "@/lib/dataGrid/dataGridFilterRow";
+import { activeDataGridFilterRowFilters, combineDataGridFilterRowConditions, dataGridFilterRowColumnKind, dataGridFilterRowConditionOptions, dataGridFilterRowDateParts, dataGridFilterRowSignature, type DataGridFilterRowFilter, type DataGridFilterRowFilters } from "@/lib/dataGrid/dataGridFilterRow";
 import LightTooltip from "@/components/ui/LightTooltip.vue";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -1419,9 +1419,13 @@ async function applyFilterRow(columnName: string, columnIndex: number, filter: D
   isApplyingFilterRow.value = true;
   try {
     const conditions = await Promise.all(
-      Object.entries(active).map(([name, entry]) => {
+      Object.entries(active).map(async ([name, entry]) => {
         const index = props.result.columns.indexOf(name);
-        return buildDataGridContextFilterCondition(dataGridFilterRowConditionOptions(name, entry, { databaseType: resolvedDatabaseType.value, identifierQuote, columnInfo: filterRowColumnInfo(name, index >= 0 ? index : columnIndex) }));
+        const context = { databaseType: resolvedDatabaseType.value, identifierQuote, columnInfo: filterRowColumnInfo(name, index >= 0 ? index : columnIndex) };
+        const dateParts = dataGridFilterRowDateParts(entry, filterRowKind(name, index >= 0 ? index : columnIndex));
+        if (!dateParts) return buildDataGridContextFilterCondition(dataGridFilterRowConditionOptions(name, entry, context));
+        const partConditions = await Promise.all(dateParts.map((part) => buildDataGridContextFilterCondition(dataGridFilterRowConditionOptions(name, { mode: part.mode, rawValue: part.rawValue, rawEndValue: "" }, context))));
+        return combineDataGridFilterRowConditions(partConditions);
       }),
     );
     const whereInput = combineDataGridFilterRowConditions(conditions);

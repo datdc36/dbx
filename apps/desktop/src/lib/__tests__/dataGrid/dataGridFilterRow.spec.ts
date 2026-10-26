@@ -4,6 +4,9 @@ import {
   combineDataGridFilterRowConditions,
   dataGridFilterRowColumnKind,
   dataGridFilterRowConditionOptions,
+  dataGridFilterRowDateParts,
+  dataGridFilterRowPresetRange,
+  formatDataGridFilterRowDate,
   dataGridFilterRowModeApplies,
   dataGridFilterRowPastedValues,
   dataGridFilterRowSignature,
@@ -74,5 +77,62 @@ describe("data grid filter row", () => {
   it("turns multi-line paste into values", () => {
     expect(dataGridFilterRowPastedValues("single")).toBeUndefined();
     expect(dataGridFilterRowPastedValues("a\r\n\n b \nc\n")).toEqual(["a", "b", "c"]);
+  });
+
+  describe("date filters", () => {
+    // Wednesday 2026-10-28, mid-afternoon local time.
+    const now = new Date(2026, 9, 28, 15, 30);
+    const range = (preset: Parameters<typeof dataGridFilterRowPresetRange>[0]) => {
+      const { start, end } = dataGridFilterRowPresetRange(preset, now);
+      return [formatDataGridFilterRowDate(start), formatDataGridFilterRowDate(end)];
+    };
+
+    it.each([
+      ["today", "2026-10-28", "2026-10-29"],
+      ["yesterday", "2026-10-27", "2026-10-28"],
+      ["tomorrow", "2026-10-29", "2026-10-30"],
+      ["this-week", "2026-10-26", "2026-11-02"],
+      ["last-week", "2026-10-19", "2026-10-26"],
+      ["next-week", "2026-11-02", "2026-11-09"],
+      ["this-month", "2026-10-01", "2026-11-01"],
+      ["last-month", "2026-09-01", "2026-10-01"],
+      ["next-month", "2026-11-01", "2026-12-01"],
+      ["this-year", "2026-01-01", "2027-01-01"],
+      ["last-year", "2025-01-01", "2026-01-01"],
+      ["next-year", "2027-01-01", "2028-01-01"],
+    ] as const)("%s is [%s, %s)", (preset, start, end) => {
+      expect(range(preset)).toEqual([start, end]);
+    });
+
+    it("weeks start on Monday even when today is Sunday", () => {
+      const { start } = dataGridFilterRowPresetRange("this-week", new Date(2026, 10, 1));
+      expect(formatDataGridFilterRowDate(start)).toBe("2026-10-26");
+    });
+
+    it("turns a preset into a half-open range", () => {
+      expect(dataGridFilterRowDateParts({ mode: "between", rawValue: "", rawEndValue: "", preset: "last-month" }, "datetime", now)).toEqual([
+        { mode: "greater-than-or-equal", rawValue: "2026-09-01" },
+        { mode: "less-than", rawValue: "2026-10-01" },
+      ]);
+    });
+
+    it("makes date-only values cover the whole day", () => {
+      const parts = (mode: "equals" | "less-than-or-equal" | "greater-than" | "between", rawValue: string, rawEndValue = "") => dataGridFilterRowDateParts({ mode, rawValue, rawEndValue }, "datetime", now);
+      expect(parts("between", "2026-09-06", "2026-10-01")).toEqual([
+        { mode: "greater-than-or-equal", rawValue: "2026-09-06" },
+        { mode: "less-than", rawValue: "2026-10-02" },
+      ]);
+      expect(parts("equals", "2026-12-31")).toEqual([
+        { mode: "greater-than-or-equal", rawValue: "2026-12-31" },
+        { mode: "less-than", rawValue: "2027-01-01" },
+      ]);
+      expect(parts("less-than-or-equal", "2026-02-28")).toEqual([{ mode: "less-than", rawValue: "2026-03-01" }]);
+      expect(parts("greater-than", "2026-10-01")).toEqual([{ mode: "greater-than-or-equal", rawValue: "2026-10-02" }]);
+    });
+
+    it("keeps explicit times and non-date columns as plain predicates", () => {
+      expect(dataGridFilterRowDateParts({ mode: "between", rawValue: "2026-09-06 08:00", rawEndValue: "2026-10-01 18:00" }, "datetime", now)).toBeUndefined();
+      expect(dataGridFilterRowDateParts({ mode: "equals", rawValue: "2026-10-01", rawEndValue: "" }, "text", now)).toBeUndefined();
+    });
   });
 });
