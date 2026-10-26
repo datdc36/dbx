@@ -1,6 +1,7 @@
 import type { ColumnInfo, DatabaseType, ForeignKeyInfo } from "@/types/database";
 import type { DataGridContextFilterMode, GridCellValue } from "@/lib/dataGrid/dataGridSql";
-import { filterModeHasCompleteValue, filterModeNeedsValue, filterModeUsesList, filterModeUsesRange, parseFilterValue, parseFilterValues } from "@/lib/dataGrid/dataGridColumnFilter";
+import { filterModeNeedsValue, filterModeUsesList, filterModeUsesRange, parseFilterValue, parseFilterValues } from "@/lib/dataGrid/dataGridColumnFilter";
+import { dataGridFilterRowColumnKind, dataGridFilterRowDateParts, isDataGridFilterRowFilterActive, type DataGridFilterRowFilter } from "@/lib/dataGrid/dataGridFilterRow";
 
 export type QueryDesignerJoinType = "inner-join" | "left-join" | "right-join" | "full-outer-join" | "cross-join" | "where-exists" | "where-not-exists";
 export type QueryDesignerAggregate = "min" | "max" | "count" | "count-distinct" | "sum" | "avg";
@@ -45,11 +46,8 @@ export interface QueryDesignerReference {
   columns: { source: string; target: string }[];
 }
 
-export interface QueryDesignerColumnFilter {
-  mode: DataGridContextFilterMode;
-  rawValue: string;
-  rawEndValue: string;
-}
+/** Same shape as a data grid filter row entry, so both use one filter box (including date presets). */
+export type QueryDesignerColumnFilter = DataGridFilterRowFilter;
 
 export interface QueryDesignerColumn {
   /** Owning table, or a standalone id for a custom expression. */
@@ -328,7 +326,7 @@ export function isGroupedDesign(state: QueryDesignerState): boolean {
 }
 
 export function isCompleteDesignerFilter(filter: QueryDesignerColumnFilter | null | undefined): filter is QueryDesignerColumnFilter {
-  return !!filter && filterModeHasCompleteValue(filter.mode, filter.rawValue, filter.rawEndValue);
+  return isDataGridFilterRowFilterActive(filter ?? undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -340,6 +338,8 @@ export interface QueryDesignerSqlFilter {
   value: GridCellValue;
   values?: GridCellValue[];
   endValue?: GridCellValue;
+  /** Further predicates on the same column, AND-ed with this one (date ranges). */
+  and?: QueryDesignerSqlFilter[];
 }
 
 export interface QueryDesignerSqlOptions {
@@ -366,6 +366,11 @@ export interface QueryDesignerSqlOptions {
 function toSqlFilter(filter: QueryDesignerColumnFilter | null | undefined, column: QueryDesignerTableColumn | undefined, databaseType: DatabaseType | undefined): QueryDesignerSqlFilter | null {
   if (!isCompleteDesignerFilter(filter)) return null;
   const columnInfo = column ? { data_type: column.dataType } : undefined;
+  const dateParts = dataGridFilterRowDateParts(filter, dataGridFilterRowColumnKind(column?.dataType, databaseType));
+  if (dateParts) {
+    const [first, ...rest] = dateParts.map((part) => ({ mode: part.mode, value: parseFilterValue(part.rawValue, columnInfo, databaseType) }));
+    return rest.length ? { ...first, and: rest } : first;
+  }
   const usesList = filterModeUsesList(filter.mode);
   return {
     mode: filter.mode,

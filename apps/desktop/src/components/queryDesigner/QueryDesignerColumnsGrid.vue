@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { uuid } from "@/lib/common/utils";
 import {
   QUERY_DESIGNER_AGGREGATES,
+  QUERY_DESIGNER_FILTER_MODE_OPTIONS,
   QUERY_DESIGNER_MAX_SORT_RANK,
   addCustomExpressionColumn,
   designerTableLabel,
@@ -21,12 +22,15 @@ import {
   type QueryDesignerColumnFilter,
   type QueryDesignerState,
 } from "@/lib/queryDesigner/queryDesignerModel";
-import QueryDesignerFilterCell from "./QueryDesignerFilterCell.vue";
+import DataGridFilterRowCell from "@/components/grid/DataGridFilterRowCell.vue";
+import { dataGridFilterRowColumnKind, type DataGridFilterRowColumnKind } from "@/lib/dataGrid/dataGridFilterRow";
+import type { DatabaseType } from "@/types/database";
 
 const NONE = "__none";
 
 const props = defineProps<{
   state: QueryDesignerState;
+  databaseType?: DatabaseType;
 }>();
 
 const emit = defineEmits<{
@@ -73,6 +77,14 @@ function setAggregate(column: QueryDesignerColumn, value: unknown) {
 
 function setSortOrder(column: QueryDesignerColumn, value: unknown) {
   update(column, { sortOrder: value === NONE ? 0 : Number(value) });
+}
+
+/** Filter box flavour: date columns get presets and whole-day/month/year ranges. Counts are numbers. */
+function filterKind(column: QueryDesignerColumn, group: boolean): DataGridFilterRowColumnKind {
+  if (group && (column.aggregate === "count" || column.aggregate === "count-distinct")) return "number";
+  if (column.customExpression !== undefined) return "other";
+  const dataType = props.state.tables.find((table) => table.designerId === column.designerId)?.columns.find((candidate) => candidate.name === column.columnName)?.dataType;
+  return dataGridFilterRowColumnKind(dataType, props.databaseType);
 }
 
 function aggregateLabel(aggregate: QueryDesignerAggregate): string {
@@ -139,10 +151,10 @@ function aggregateLabel(aggregate: QueryDesignerAggregate): string {
               </Select>
             </td>
             <td v-for="slot in filterSlots" :key="`filter-${slot}`" class="px-2 py-1">
-              <QueryDesignerFilterCell :filter="column.filters?.[slot]" @change="(filter) => setFilter(column, 'filters', slot, filter)" />
+              <div class="h-7 min-w-56"><DataGridFilterRowCell :filter="column.filters?.[slot] ?? undefined" :kind="filterKind(column, false)" :mode-options="QUERY_DESIGNER_FILTER_MODE_OPTIONS" @change="(filter) => setFilter(column, 'filters', slot, filter)" /></div>
             </td>
             <td v-for="slot in groupFilterSlots" :key="`group-filter-${slot}`" class="px-2 py-1">
-              <QueryDesignerFilterCell :filter="column.groupFilters?.[slot]" @change="(filter) => setFilter(column, 'groupFilters', slot, filter)" />
+              <div class="h-7 min-w-56"><DataGridFilterRowCell :filter="column.groupFilters?.[slot] ?? undefined" :kind="filterKind(column, true)" :mode-options="QUERY_DESIGNER_FILTER_MODE_OPTIONS" @change="(filter) => setFilter(column, 'groupFilters', slot, filter)" /></div>
             </td>
             <td class="px-2 py-1">
               <div class="flex items-center justify-end gap-0.5">

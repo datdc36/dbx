@@ -161,4 +161,18 @@ describe("query designer model", () => {
 
     expect(buildQueryDesignerSqlOptions(state, "mysql", undefined, false).tables[0].schema).toBeUndefined();
   });
+
+  it("turns date filters into ranges for the backend", () => {
+    const createId = ids();
+    const events: QueryDesignerTableSource = { schema: "public", tableName: "events", columns: [column("created", "timestamptz")], foreignKeys: [] };
+    let state = addDesignerTable(createQueryDesignerState(), events, { x: 0, y: 0 }, createId);
+    const designerId = state.tables[0].designerId;
+    state = updateDesignerColumn(state, { designerId, columnName: "created" }, { filters: [{ mode: "equals", rawValue: "2026-09", rawEndValue: "" }] });
+    expect(buildQueryDesignerSqlOptions(state, "postgres").columns[0].filters).toEqual([{ mode: "greater-than-or-equal", value: "2026-09-01", and: [{ mode: "less-than", value: "2026-10-01" }] }]);
+
+    state = updateDesignerColumn(state, { designerId, columnName: "created" }, { filters: [{ mode: "between", rawValue: "", rawEndValue: "", preset: "this-year" }] });
+    const [filter] = buildQueryDesignerSqlOptions(state, "postgres").columns[0].filters;
+    expect(filter?.mode).toBe("greater-than-or-equal");
+    expect(filter?.and).toHaveLength(1);
+  });
 });

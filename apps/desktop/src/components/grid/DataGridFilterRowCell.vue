@@ -54,7 +54,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 const mode = ref<DataGridContextFilterMode>(props.filter?.mode ?? defaultDataGridFilterRowMode(props.kind));
-const draftValue = ref(props.filter?.rawValue ?? "");
+const draftValue = ref(boxText(props.filter));
 const draftEndValue = ref(props.filter?.rawEndValue ?? "");
 const preset = ref<DataGridFilterRowDatePreset | undefined>(props.filter?.preset);
 const menuOpen = ref(false);
@@ -63,7 +63,7 @@ watch(
   () => props.filter,
   (filter) => {
     mode.value = filter?.mode ?? defaultDataGridFilterRowMode(props.kind);
-    draftValue.value = filter?.rawValue ?? "";
+    draftValue.value = boxText(filter);
     draftEndValue.value = filter?.rawEndValue ?? "";
     preset.value = filter?.preset;
   },
@@ -96,14 +96,38 @@ const menuItems = computed<LightDropdownMenuItem[]>(() =>
     : [{ label: t("grid.clearFilter"), value: CLEAR, icon: X, disabled: !props.filter }, ...applicableModes.value.map((option, index) => ({ label: t(option.labelKey), value: option.value, separatorBefore: index === 0, checked: option.value === mode.value }))],
 );
 
+/** What the box shows: the typed value, or the name of a preset / value-less operator as editable text. */
+function boxText(filter: DataGridFilterRowFilter | undefined): string {
+  if (!filter) return "";
+  if (filter.preset) return t(presetLabelKey(filter.preset));
+  if (!filterModeNeedsValue(filter.mode)) return labelForMode(filter.mode);
+  return filter.rawValue;
+}
+
+/** Text typed in the box that names a preset or a value-less operator ("today", "is null" …). */
+function keywordFor(text: string): { preset?: DataGridFilterRowDatePreset; mode?: DataGridContextFilterMode } | undefined {
+  const typed = text.trim().toLocaleLowerCase();
+  if (!typed) return undefined;
+  if (props.kind === "datetime") {
+    const matched = DATA_GRID_FILTER_ROW_DATE_PRESET_GROUPS.flat().find((candidate) => t(presetLabelKey(candidate)).toLocaleLowerCase() === typed);
+    if (matched) return { preset: matched };
+  }
+  const valueless = props.kind === "datetime" ? (["is-null", "is-not-null"] as DataGridContextFilterMode[]) : applicableModes.value.map((option) => option.value).filter((value) => !filterModeNeedsValue(value));
+  const matchedMode = valueless.find((candidate) => labelForMode(candidate).toLocaleLowerCase() === typed);
+  return matchedMode ? { mode: matchedMode } : undefined;
+}
+
 function commit(nextMode = mode.value) {
-  if (preset.value) return;
+  if (preset.value) {
+    if (props.filter?.preset !== preset.value) emit("change", { mode: "between", rawValue: "", rawEndValue: "", preset: preset.value });
+    return;
+  }
   const filter: DataGridFilterRowFilter = { mode: nextMode, rawValue: filterModeNeedsValue(nextMode) ? draftValue.value : "", rawEndValue: filterModeUsesRange(nextMode) ? draftEndValue.value : "" };
   if (!isDataGridFilterRowFilterActive(filter)) {
     if (props.filter) emit("change", null);
     return;
   }
-  if (props.filter && props.filter.mode === filter.mode && props.filter.rawValue === filter.rawValue && props.filter.rawEndValue === filter.rawEndValue) return;
+  if (props.filter && !props.filter.preset && props.filter.mode === filter.mode && props.filter.rawValue === filter.rawValue && props.filter.rawEndValue === filter.rawEndValue) return;
   emit("change", filter);
 }
 
@@ -120,13 +144,32 @@ function selectMenuItem(value: string) {
   if (value.startsWith(PRESET_PREFIX)) {
     preset.value = value.slice(PRESET_PREFIX.length) as DataGridFilterRowDatePreset;
     mode.value = "between";
-    if (props.filter?.preset !== preset.value) emit("change", { mode: "between", rawValue: "", rawEndValue: "", preset: preset.value });
+    draftValue.value = t(presetLabelKey(preset.value));
+    commit();
     return;
   }
+  const showedLabel = !!preset.value || !filterModeNeedsValue(mode.value);
   preset.value = undefined;
   mode.value = value as DataGridContextFilterMode;
+  if (!filterModeNeedsValue(mode.value)) draftValue.value = labelForMode(mode.value);
+  else if (showedLabel) draftValue.value = "";
   // Value-less operators (is null …) apply at once; the others wait for a value.
   commit(mode.value);
+}
+
+/** The box is plain text: a preset or operator name selects it, anything else is a value. */
+function onInput() {
+  const keyword = keywordFor(draftValue.value);
+  if (keyword?.preset) {
+    preset.value = keyword.preset;
+    mode.value = "between";
+  } else if (keyword?.mode) {
+    preset.value = undefined;
+    mode.value = keyword.mode;
+  } else if (preset.value || !filterModeNeedsValue(mode.value)) {
+    preset.value = undefined;
+    mode.value = defaultDataGridFilterRowMode(props.kind);
+  }
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -143,10 +186,10 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 function onPaste(event: ClipboardEvent) {
-  if (preset.value) return;
   const values = dataGridFilterRowPastedValues(event.clipboardData?.getData("text/plain") ?? "");
   if (!values) return;
   event.preventDefault();
+  preset.value = undefined;
   mode.value = "in";
   draftValue.value = formatFilterRawValues(values);
   commit("in");
@@ -161,10 +204,11 @@ function onPaste(event: ClipboardEvent) {
       class="h-5 min-w-0 flex-1 rounded-sm border bg-background px-1.5 text-xs font-normal outline-none placeholder:text-muted-foreground/70 focus:border-ring disabled:opacity-60"
       :class="isActive ? 'border-emerald-500/70 bg-emerald-500/5' : 'border-border'"
       :placeholder="needsValue ? placeholder : modeLabel"
-      :disabled="disabled || !needsValue"
+      :disabled="disabled"
       :title="isActive ? modeLabel : undefined"
       spellcheck="false"
       autocomplete="off"
+      @input="onInput"
       @keydown="onKeydown"
       @blur="commit()"
       @paste="onPaste"
@@ -181,6 +225,9 @@ function onPaste(event: ClipboardEvent) {
       @keydown="onKeydown"
       @blur="commit()"
     />
+    <button v-if="isActive" type="button" class="flex h-5 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground" :title="t('grid.clearFilter')" :disabled="disabled" @click.stop="clear">
+      <X class="h-3 w-3" />
+    </button>
     <LightDropdownMenu
       :items="menuItems"
       :open="menuOpen"

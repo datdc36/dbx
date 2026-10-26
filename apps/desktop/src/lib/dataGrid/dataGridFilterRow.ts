@@ -85,11 +85,7 @@ export function dataGridFilterRowDisplaysValue(mode: DataGridContextFilterMode):
 // Date ranges
 // ---------------------------------------------------------------------------
 
-const DATE_ONLY = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
-
-export function isDateOnlyFilterValue(value: string): boolean {
-  return DATE_ONLY.test(value.trim());
-}
+const DATE_PERIOD = /^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/;
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -100,9 +96,23 @@ export function formatDataGridFilterRowDate(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function nextDay(value: string): string {
-  const [, year, month, day] = DATE_ONLY.exec(value.trim())!;
-  return formatDataGridFilterRowDate(new Date(Number(year), Number(month) - 1, Number(day) + 1));
+/**
+ * A partial date typed into a date filter: `2026` (a year), `2026-09` (a month) or
+ * `2026-09-1` (a day), as the half-open range `[start, end)` it covers.
+ * Anything else (an ISO date-time, …) is not a period and is used as typed.
+ */
+export function dataGridFilterRowDatePeriod(value: string): { start: string; end: string } | undefined {
+  const match = DATE_PERIOD.exec(value.trim());
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = match[2] === undefined ? undefined : Number(match[2]);
+  const day = match[3] === undefined ? undefined : Number(match[3]);
+  if (month !== undefined && (month < 1 || month > 12)) return undefined;
+  if (month === undefined) return { start: formatDataGridFilterRowDate(new Date(year, 0, 1)), end: formatDataGridFilterRowDate(new Date(year + 1, 0, 1)) };
+  if (day === undefined) return { start: formatDataGridFilterRowDate(new Date(year, month - 1, 1)), end: formatDataGridFilterRowDate(new Date(year, month, 1)) };
+  const date = new Date(year, month - 1, day);
+  if (day < 1 || date.getMonth() !== month - 1) return undefined;
+  return { start: formatDataGridFilterRowDate(date), end: formatDataGridFilterRowDate(new Date(year, month - 1, day + 1)) };
 }
 
 /** Half-open local range `[start, end)` of a relative preset. Weeks start on Monday. */
@@ -122,9 +132,10 @@ export function dataGridFilterRowPresetRange(preset: DataGridFilterRowDatePreset
 }
 
 /**
- * Date/time filters that need two comparisons: relative presets, and date-only values
- * that mean a whole day (`= 2026-10-01`, `<= 2026-10-01`, `between … and 2026-10-01`
- * all include that entire day). Returns `undefined` when the filter is a plain predicate.
+ * Date/time filters expressed as plain comparisons: relative presets, and partial dates
+ * (`2026`, `2026-09`, `2026-09-1`) that stand for a whole year, month or day, so
+ * `= 2026-09` is September and `between 2026-09-06 and 2026-10-01` includes all of
+ * 1 October. Returns `undefined` when the filter is already a plain predicate.
  */
 export function dataGridFilterRowDateParts(filter: DataGridFilterRowFilter, kind: DataGridFilterRowColumnKind, now = new Date()): Array<{ mode: DataGridContextFilterMode; rawValue: string }> | undefined {
   if (kind !== "datetime") return undefined;
@@ -135,27 +146,28 @@ export function dataGridFilterRowDateParts(filter: DataGridFilterRowFilter, kind
       { mode: "less-than", rawValue: formatDataGridFilterRowDate(end) },
     ];
   }
-  const value = filter.rawValue.trim();
-  const endValue = filter.rawEndValue.trim();
+  const period = dataGridFilterRowDatePeriod(filter.rawValue);
   switch (filter.mode) {
     case "equals":
-      return isDateOnlyFilterValue(value)
+      return period
         ? [
-            { mode: "greater-than-or-equal", rawValue: value },
-            { mode: "less-than", rawValue: nextDay(value) },
+            { mode: "greater-than-or-equal", rawValue: period.start },
+            { mode: "less-than", rawValue: period.end },
           ]
         : undefined;
+    case "less-than":
+      return period ? [{ mode: "less-than", rawValue: period.start }] : undefined;
     case "less-than-or-equal":
-      return isDateOnlyFilterValue(value) ? [{ mode: "less-than", rawValue: nextDay(value) }] : undefined;
+      return period ? [{ mode: "less-than", rawValue: period.end }] : undefined;
     case "greater-than":
-      return isDateOnlyFilterValue(value) ? [{ mode: "greater-than-or-equal", rawValue: nextDay(value) }] : undefined;
-    case "between":
-      return isDateOnlyFilterValue(endValue)
-        ? [
-            { mode: "greater-than-or-equal", rawValue: value },
-            { mode: "less-than", rawValue: nextDay(endValue) },
-          ]
-        : undefined;
+      return period ? [{ mode: "greater-than-or-equal", rawValue: period.end }] : undefined;
+    case "greater-than-or-equal":
+      return period ? [{ mode: "greater-than-or-equal", rawValue: period.start }] : undefined;
+    case "between": {
+      const endPeriod = dataGridFilterRowDatePeriod(filter.rawEndValue);
+      if (!period && !endPeriod) return undefined;
+      return [{ mode: "greater-than-or-equal", rawValue: period?.start ?? filter.rawValue.trim() }, endPeriod ? { mode: "less-than", rawValue: endPeriod.end } : { mode: "less-than-or-equal", rawValue: filter.rawEndValue.trim() }];
+    }
     default:
       return undefined;
   }

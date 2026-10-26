@@ -336,7 +336,7 @@ function toggleDistinct() {
           </button>
         </div>
         <div class="min-h-0 flex-1">
-          <QueryDesignerColumnsGrid v-if="bottomTab === 'columns'" :state="state" @change="applyChange" />
+          <QueryDesignerColumnsGrid v-if="bottomTab === 'columns'" :state="state" :database-type="databaseType" @change="applyChange" />
           <SqlPreviewPanel v-else-if="bottomTab === 'sql'" :sql="sql" :sql-format-dialect="sqlFormatDialectForDbType(databaseType)" :empty-message="t('queryDesigner.noSql')" :can-undo="!!undoStack.length" :can-redo="!!redoStack.length" :closable="false" @undo="undo" @redo="redo" />
           <div v-else class="flex h-full min-h-0 flex-col">
             <ErrorBanner v-if="executionError" :message="executionError" copy-mode="label" dismissible @dismiss="executionError = ''" />

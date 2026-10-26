@@ -5,6 +5,7 @@ import {
   dataGridFilterRowColumnKind,
   dataGridFilterRowConditionOptions,
   dataGridFilterRowDateParts,
+  dataGridFilterRowDatePeriod,
   dataGridFilterRowPresetRange,
   formatDataGridFilterRowDate,
   dataGridFilterRowModeApplies,
@@ -128,6 +129,42 @@ describe("data grid filter row", () => {
       ]);
       expect(parts("less-than-or-equal", "2026-02-28")).toEqual([{ mode: "less-than", rawValue: "2026-03-01" }]);
       expect(parts("greater-than", "2026-10-01")).toEqual([{ mode: "greater-than-or-equal", rawValue: "2026-10-02" }]);
+    });
+
+    it.each([
+      ["2026", "2026-01-01", "2027-01-01"],
+      ["2026-09", "2026-09-01", "2026-10-01"],
+      ["2026-12", "2026-12-01", "2027-01-01"],
+      ["2026-09-1", "2026-09-01", "2026-09-02"],
+      ["2026-2-28", "2026-02-28", "2026-03-01"],
+    ])("reads %s as a period [%s, %s)", (value, start, end) => {
+      expect(dataGridFilterRowDatePeriod(value)).toEqual({ start, end });
+    });
+
+    it.each(["2026-13", "2026-02-30", "2026-09-01 10:00", "2026-09-01T10:00:00Z", "26", "abc"])("does not treat %s as a period", (value) => {
+      expect(dataGridFilterRowDatePeriod(value)).toBeUndefined();
+    });
+
+    it("applies periods to every comparison", () => {
+      const parts = (mode: "equals" | "less-than" | "greater-than-or-equal" | "between", rawValue: string, rawEndValue = "") => dataGridFilterRowDateParts({ mode, rawValue, rawEndValue }, "datetime", now);
+      expect(parts("equals", "2026")).toEqual([
+        { mode: "greater-than-or-equal", rawValue: "2026-01-01" },
+        { mode: "less-than", rawValue: "2027-01-01" },
+      ]);
+      expect(parts("equals", "2026-09")).toEqual([
+        { mode: "greater-than-or-equal", rawValue: "2026-09-01" },
+        { mode: "less-than", rawValue: "2026-10-01" },
+      ]);
+      expect(parts("less-than", "2026-09")).toEqual([{ mode: "less-than", rawValue: "2026-09-01" }]);
+      expect(parts("greater-than-or-equal", "2026-9-1")).toEqual([{ mode: "greater-than-or-equal", rawValue: "2026-09-01" }]);
+      expect(parts("between", "2025", "2026-03")).toEqual([
+        { mode: "greater-than-or-equal", rawValue: "2025-01-01" },
+        { mode: "less-than", rawValue: "2026-04-01" },
+      ]);
+      expect(parts("between", "2026-09-01 08:00", "2026-10")).toEqual([
+        { mode: "greater-than-or-equal", rawValue: "2026-09-01 08:00" },
+        { mode: "less-than", rawValue: "2026-11-01" },
+      ]);
     });
 
     it("keeps explicit times and non-date columns as plain predicates", () => {

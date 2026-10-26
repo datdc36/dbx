@@ -142,6 +142,10 @@ pub struct QueryDesignerFilter {
     pub values: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_value: Option<Value>,
+    /// Further predicates on the same column, AND-ed with this one (a date range is
+    /// `>= start` plus `< end`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub and: Vec<QueryDesignerFilter>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -460,6 +464,26 @@ impl<'a> DesignerSqlBuilder<'a> {
         filter: &QueryDesignerFilter,
         expression: &str,
     ) -> Option<String> {
+        if filter.and.is_empty() {
+            return self.single_filter_predicate(column, filter, expression);
+        }
+        let predicates: Vec<String> = std::iter::once(filter)
+            .chain(&filter.and)
+            .filter_map(|part| self.single_filter_predicate(column, part, expression))
+            .collect();
+        match predicates.len() {
+            0 => None,
+            1 => predicates.into_iter().next(),
+            _ => Some(predicates.join(" AND ")),
+        }
+    }
+
+    fn single_filter_predicate(
+        &self,
+        column: &QueryDesignerColumn,
+        filter: &QueryDesignerFilter,
+        expression: &str,
+    ) -> Option<String> {
         build_data_grid_context_filter_condition_for_expression(
             &DataGridContextFilterConditionOptions {
                 database_type: self.options.database_type,
@@ -673,7 +697,7 @@ mod tests {
     }
 
     fn filter(mode: DataGridContextFilterMode, value: Value) -> Option<QueryDesignerFilter> {
-        Some(QueryDesignerFilter { mode, value, values: Vec::new(), end_value: None })
+        Some(QueryDesignerFilter { mode, value, values: Vec::new(), end_value: None, and: Vec::new() })
     }
 
     fn postgres(
@@ -822,6 +846,29 @@ mod tests {
         assert_eq!(
             sql,
             "SELECT *\nFROM \"a\"\n  INNER JOIN \"b\" ON \"a\".\"id\" = \"b\".\"a_id\"\nWHERE \"a\".\"code\" = \"b\".\"a_code\""
+        );
+    }
+
+    #[test]
+    fn a_filter_with_and_parts_becomes_a_range() {
+        let mut created = column("o", "created");
+        created.filters = vec![Some(QueryDesignerFilter {
+            mode: DataGridContextFilterMode::GreaterThanOrEqual,
+            value: json!("2026-09-01"),
+            values: Vec::new(),
+            end_value: None,
+            and: vec![QueryDesignerFilter {
+                mode: DataGridContextFilterMode::LessThan,
+                value: json!("2026-10-01"),
+                values: Vec::new(),
+                end_value: None,
+                and: Vec::new(),
+            }],
+        })];
+        let sql = build_query_designer_sql(&postgres(vec![table("o", "orders", 0.0)], vec![], vec![created]));
+        assert_eq!(
+            sql,
+            "SELECT *\nFROM \"orders\"\nWHERE \"orders\".\"created\" >= '2026-09-01' AND \"orders\".\"created\" < '2026-10-01'"
         );
     }
 
