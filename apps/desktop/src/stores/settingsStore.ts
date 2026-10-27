@@ -837,6 +837,8 @@ export type DataGridRowNumberMode = (typeof DATA_GRID_ROW_NUMBER_MODES)[number];
 export const DOUBLE_CLICK_STRING_SELECTION_MODES = ["content", "word"] as const;
 export type DoubleClickStringSelectionMode = (typeof DOUBLE_CLICK_STRING_SELECTION_MODES)[number];
 export type DataGridFilterEditorView = "quick" | "conditions" | "text";
+/** Filter row input: "operator" types a value and picks the operator from ⋮; "expression" types the whole filter (`>10`, `^abc`, `NULL`, `TODAY` …). */
+export type DataGridFilterRowStyle = "operator" | "expression";
 export type DataGridToolbarLayout = "single" | "split";
 const RESULT_RUN_DISPLAY_MODES = ["tabs", "list"] as const;
 export type ResultRunDisplayMode = (typeof RESULT_RUN_DISPLAY_MODES)[number];
@@ -1128,6 +1130,7 @@ export interface EditorSettings {
   dataGridKeepFilterEditorExpanded: boolean;
   /** Show the per-column filter row under the data grid headers. */
   dataGridShowFilterRow: boolean;
+  dataGridFilterRowStyle: DataGridFilterRowStyle;
   dataGridTextFilterPanelHeight: number;
   localFilterPopoverWidth: number;
   dataGridRenderMode: DataGridRenderMode;
@@ -1493,6 +1496,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   dataGridToolbarLayout: "single",
   dataGridKeepFilterEditorExpanded: false,
   dataGridShowFilterRow: true,
+  dataGridFilterRowStyle: "operator",
   dataGridTextFilterPanelHeight: DATA_GRID_TEXT_FILTER_PANEL_HEIGHT_DEFAULT,
   localFilterPopoverWidth: 360,
   dataGridRenderMode: "canvas",
@@ -1745,6 +1749,10 @@ function normalizeDoubleClickStringSelectionMode(value: unknown): DoubleClickStr
 
 function normalizeDataGridFilterEditorView(value: unknown): DataGridFilterEditorView {
   return value === "conditions" || value === "text" ? value : DEFAULT_EDITOR_SETTINGS.dataGridFilterEditorView;
+}
+
+function normalizeDataGridFilterRowStyle(value: unknown): DataGridFilterRowStyle {
+  return value === "operator" || value === "expression" ? value : DEFAULT_EDITOR_SETTINGS.dataGridFilterRowStyle;
 }
 
 function normalizeDataGridToolbarLayout(value: unknown): DataGridToolbarLayout {
@@ -2197,6 +2205,7 @@ export function normalizeEditorSettings(settings: Partial<EditorSettings>, exist
     dataGridFilterEditorView: normalizeDataGridFilterEditorView(settings.dataGridFilterEditorView),
     dataGridToolbarLayout: normalizeDataGridToolbarLayout(settings.dataGridToolbarLayout),
     dataGridShowFilterRow: typeof settings.dataGridShowFilterRow === "boolean" ? settings.dataGridShowFilterRow : DEFAULT_EDITOR_SETTINGS.dataGridShowFilterRow,
+    dataGridFilterRowStyle: normalizeDataGridFilterRowStyle(settings.dataGridFilterRowStyle),
     dataGridKeepFilterEditorExpanded: typeof settings.dataGridKeepFilterEditorExpanded === "boolean" ? settings.dataGridKeepFilterEditorExpanded : hasDataGridKeepFilterEditorExpanded ? false : legacyDataGridAutoHideFilterBuilder === false,
     dataGridTextFilterPanelHeight: normalizeDataGridTextFilterPanelHeight(settings.dataGridTextFilterPanelHeight),
     localFilterPopoverWidth: normalizeDrawerWidth(settings.localFilterPopoverWidth, 240, DEFAULT_EDITOR_SETTINGS.localFilterPopoverWidth),
@@ -3145,6 +3154,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (partial.dataGridToolbarLayout !== undefined) editorSettings.value.dataGridToolbarLayout = normalizeDataGridToolbarLayout(partial.dataGridToolbarLayout);
     if (partial.dataGridKeepFilterEditorExpanded !== undefined) editorSettings.value.dataGridKeepFilterEditorExpanded = partial.dataGridKeepFilterEditorExpanded === true;
     if (partial.dataGridShowFilterRow !== undefined) editorSettings.value.dataGridShowFilterRow = partial.dataGridShowFilterRow === true;
+    if (partial.dataGridFilterRowStyle !== undefined) editorSettings.value.dataGridFilterRowStyle = normalizeDataGridFilterRowStyle(partial.dataGridFilterRowStyle);
     if (partial.dataGridTextFilterPanelHeight !== undefined) editorSettings.value.dataGridTextFilterPanelHeight = normalizeDataGridTextFilterPanelHeight(partial.dataGridTextFilterPanelHeight);
     if (partial.localFilterPopoverWidth !== undefined) editorSettings.value.localFilterPopoverWidth = normalizeDrawerWidth(partial.localFilterPopoverWidth, 240, DEFAULT_EDITOR_SETTINGS.localFilterPopoverWidth);
     if (partial.dataGridRenderMode !== undefined) editorSettings.value.dataGridRenderMode = normalizeDataGridRenderMode(partial.dataGridRenderMode);

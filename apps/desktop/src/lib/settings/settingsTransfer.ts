@@ -243,6 +243,7 @@ const SETTINGS_TRANSFER_CATEGORY_KEYS: Record<SettingsTransferCategoryId, readon
     "dataGridFilterEditorView",
     "dataGridKeepFilterEditorExpanded",
     "dataGridShowFilterRow",
+    "dataGridFilterRowStyle",
     "dataGridTextFilterPanelHeight",
     "dataGridToolbarLayout",
     "defaultAutoKeepResults",

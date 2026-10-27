@@ -851,6 +851,11 @@ const editDataGridFilterEditorView = ref<DataGridFilterEditorView>(settingsStore
 const editDataGridToolbarLayout = ref<DataGridToolbarLayout>(settingsStore.editorSettings.dataGridToolbarLayout);
 const editDataGridKeepFilterEditorExpanded = ref(settingsStore.editorSettings.dataGridKeepFilterEditorExpanded);
 const editDataGridShowFilterRow = ref(settingsStore.editorSettings.dataGridShowFilterRow);
+const editDataGridFilterRowStyle = ref(settingsStore.editorSettings.dataGridFilterRowStyle);
+const DATA_GRID_FILTER_ROW_STYLE_OPTIONS = [
+  { value: "operator", labelKey: "settings.dataGridFilterRowStyleOperator", exampleKey: "settings.dataGridFilterRowStyleOperatorExample" },
+  { value: "expression", labelKey: "settings.dataGridFilterRowStyleExpression", exampleKey: "settings.dataGridFilterRowStyleExpressionExample" },
+] as const;
 const dataGridFilterViewPreviewExpanded = ref(true);
 const editDataGridTextFilterPanelHeight = ref(settingsStore.editorSettings.dataGridTextFilterPanelHeight);
 const editDefaultAutoKeepResults = ref(settingsStore.editorSettings.defaultAutoKeepResults);
@@ -1282,6 +1287,7 @@ function currentEditorSettingsDraft(): EditorSettingsDraft {
     dataGridToolbarLayout: editDataGridToolbarLayout.value,
     dataGridKeepFilterEditorExpanded: editDataGridKeepFilterEditorExpanded.value,
     dataGridShowFilterRow: editDataGridShowFilterRow.value,
+    dataGridFilterRowStyle: editDataGridFilterRowStyle.value,
     dataGridTextFilterPanelHeight: editDataGridTextFilterPanelHeight.value,
     defaultAutoKeepResults: editDefaultAutoKeepResults.value,
     pinResultTabOnClick: editPinResultTabOnClick.value,
@@ -1989,6 +1995,7 @@ function syncEditorSettingsDraftFromStore() {
   editDataGridToolbarLayout.value = settingsStore.editorSettings.dataGridToolbarLayout;
   editDataGridKeepFilterEditorExpanded.value = settingsStore.editorSettings.dataGridKeepFilterEditorExpanded;
   editDataGridShowFilterRow.value = settingsStore.editorSettings.dataGridShowFilterRow;
+  editDataGridFilterRowStyle.value = settingsStore.editorSettings.dataGridFilterRowStyle;
   editDataGridTextFilterPanelHeight.value = settingsStore.editorSettings.dataGridTextFilterPanelHeight;
   editDefaultAutoKeepResults.value = settingsStore.editorSettings.defaultAutoKeepResults;
   editPinResultTabOnClick.value = settingsStore.editorSettings.pinResultTabOnClick;
@@ -2168,6 +2175,7 @@ const editorSettingsDraftRefs: EditorSettingsDraftRefMap = {
   dataGridToolbarLayout: editDataGridToolbarLayout,
   dataGridKeepFilterEditorExpanded: editDataGridKeepFilterEditorExpanded,
   dataGridShowFilterRow: editDataGridShowFilterRow,
+  dataGridFilterRowStyle: editDataGridFilterRowStyle,
   dataGridTextFilterPanelHeight: editDataGridTextFilterPanelHeight,
   defaultAutoKeepResults: editDefaultAutoKeepResults,
   pinResultTabOnClick: editPinResultTabOnClick,
@@ -2848,6 +2856,8 @@ function resetDefaultsForTab(tab: SettingsCategory) {
     editDataGridToolbarLayout.value = DEFAULT_EDITOR_SETTINGS.dataGridToolbarLayout;
     editDataGridKeepFilterEditorExpanded.value = DEFAULT_EDITOR_SETTINGS.dataGridKeepFilterEditorExpanded;
     editDataGridShowFilterRow.value = DEFAULT_EDITOR_SETTINGS.dataGridShowFilterRow;
+    editDataGridFilterRowStyle.value = DEFAULT_EDITOR_SETTINGS.dataGridFilterRowStyle;
+    editDataGridFilterRowStyle.value = DEFAULT_EDITOR_SETTINGS.dataGridFilterRowStyle;
     editDataGridTextFilterPanelHeight.value = DEFAULT_EDITOR_SETTINGS.dataGridTextFilterPanelHeight;
     editDefaultAutoKeepResults.value = DEFAULT_EDITOR_SETTINGS.defaultAutoKeepResults;
     editPinResultTabOnClick.value = DEFAULT_EDITOR_SETTINGS.pinResultTabOnClick;
@@ -9808,6 +9818,27 @@ onUnmounted(() => {
                       <p class="text-xs text-muted-foreground">{{ t("settings.dataGridShowFilterRowDescription") }}</p>
                     </div>
                     <Switch id="data-grid-show-filter-row" v-model="editDataGridShowFilterRow" />
+                  </div>
+                  <div v-if="editDataGridShowFilterRow" class="settings-item space-y-2 rounded-md border bg-background px-3 py-2" data-settings-target="data-grid-filter-row-style">
+                    <div class="space-y-1">
+                      <Label>{{ t("settings.dataGridFilterRowStyle") }}</Label>
+                      <p class="text-xs text-muted-foreground">{{ t("settings.dataGridFilterRowStyleDescription") }}</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2" data-data-grid-filter-row-style-options>
+                      <Button
+                        v-for="option in DATA_GRID_FILTER_ROW_STYLE_OPTIONS"
+                        :key="option.value"
+                        type="button"
+                        variant="outline"
+                        class="settings-choice-card h-auto min-h-10 min-w-0 flex-col items-start justify-start gap-0.5 overflow-hidden whitespace-normal border px-3 py-1.5 text-left"
+                        :class="editDataGridFilterRowStyle === option.value ? 'dbx-choice-selected' : ''"
+                        :aria-pressed="editDataGridFilterRowStyle === option.value"
+                        @click="editDataGridFilterRowStyle = option.value"
+                      >
+                        <span class="truncate">{{ t(option.labelKey) }}</span>
+                        <span class="text-[11px] font-normal text-muted-foreground">{{ t(option.exampleKey) }}</span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
 

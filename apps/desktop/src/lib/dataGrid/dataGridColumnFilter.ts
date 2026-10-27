@@ -172,7 +172,7 @@ export function combineWhereInputs(manualWhereInput?: string, structuredWhereInp
 }
 
 export function filterModeNeedsValue(mode: DataGridContextFilterMode): boolean {
-  return mode !== "is-null" && mode !== "is-not-null" && mode !== "is-blank" && mode !== "is-not-blank";
+  return mode !== "is-null" && mode !== "is-not-null" && mode !== "is-blank" && mode !== "is-not-blank" && mode !== "is-empty" && mode !== "is-not-empty";
 }
 
 export function filterModeUsesList(mode: DataGridContextFilterMode): boolean {

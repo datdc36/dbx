@@ -146,6 +146,11 @@ pub struct QueryDesignerFilter {
     /// `>= start` plus `< end`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub and: Vec<QueryDesignerFilter>,
+    /// Alternatives OR-ed with this filter (and its `and` parts): the typed filter syntax's `a, b`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub or: Vec<QueryDesignerFilter>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub like_case_insensitive: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -464,6 +469,37 @@ impl<'a> DesignerSqlBuilder<'a> {
         filter: &QueryDesignerFilter,
         expression: &str,
     ) -> Option<String> {
+        if filter.or.is_empty() {
+            return self.and_filter_predicate(column, filter, expression);
+        }
+        let groups: Vec<(String, bool)> = std::iter::once(filter)
+            .chain(&filter.or)
+            .filter_map(|group| {
+                let compound = !group.and.is_empty();
+                self.and_filter_predicate(column, group, expression).map(|predicate| (predicate, compound))
+            })
+            .collect();
+        match groups.len() {
+            0 => None,
+            1 => groups.into_iter().next().map(|(predicate, _)| predicate),
+            _ => Some(format!(
+                "({})",
+                groups
+                    .into_iter()
+                    .map(|(predicate, compound)| if compound { format!("({predicate})") } else { predicate })
+                    .collect::<Vec<_>>()
+                    .join(" OR ")
+            )),
+        }
+    }
+
+    /// The filter and its `and` parts; its `or` alternatives are the caller's business.
+    fn and_filter_predicate(
+        &self,
+        column: &QueryDesignerColumn,
+        filter: &QueryDesignerFilter,
+        expression: &str,
+    ) -> Option<String> {
         if filter.and.is_empty() {
             return self.single_filter_predicate(column, filter, expression);
         }
@@ -494,6 +530,7 @@ impl<'a> DesignerSqlBuilder<'a> {
                 values: filter.values.clone(),
                 end_value: filter.end_value.clone(),
                 column_info: column.column_info.clone(),
+                like_case_insensitive: filter.like_case_insensitive,
             },
             expression,
         )
@@ -697,7 +734,15 @@ mod tests {
     }
 
     fn filter(mode: DataGridContextFilterMode, value: Value) -> Option<QueryDesignerFilter> {
-        Some(QueryDesignerFilter { mode, value, values: Vec::new(), end_value: None, and: Vec::new() })
+        Some(QueryDesignerFilter {
+            mode,
+            value,
+            values: Vec::new(),
+            end_value: None,
+            and: Vec::new(),
+            or: Vec::new(),
+            like_case_insensitive: false,
+        })
     }
 
     fn postgres(
@@ -863,12 +908,47 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 and: Vec::new(),
+                or: Vec::new(),
+                like_case_insensitive: false,
             }],
+            or: Vec::new(),
+            like_case_insensitive: false,
         })];
         let sql = build_query_designer_sql(&postgres(vec![table("o", "orders", 0.0)], vec![], vec![created]));
         assert_eq!(
             sql,
             "SELECT *\nFROM \"orders\"\nWHERE \"orders\".\"created\" >= '2026-09-01' AND \"orders\".\"created\" < '2026-10-01'"
+        );
+    }
+
+    #[test]
+    fn a_filter_with_or_alternatives_is_parenthesised() {
+        let mut created = column("o", "created");
+        let part = |mode, value: Value| QueryDesignerFilter {
+            mode,
+            value,
+            values: Vec::new(),
+            end_value: None,
+            and: Vec::new(),
+            or: Vec::new(),
+            like_case_insensitive: false,
+        };
+        created.filters = vec![Some(QueryDesignerFilter {
+            or: vec![
+                QueryDesignerFilter {
+                    and: vec![part(DataGridContextFilterMode::LessThan, json!("2026-10-01"))],
+                    ..part(DataGridContextFilterMode::GreaterThanOrEqual, json!("2026-09-01"))
+                },
+                part(DataGridContextFilterMode::SqlTemplate, json!("$$ > now()")),
+            ],
+            ..part(DataGridContextFilterMode::IsNull, Value::Null)
+        })];
+        let mut status = column("o", "status");
+        status.filters = vec![filter(DataGridContextFilterMode::Equals, json!("open"))];
+        let sql = build_query_designer_sql(&postgres(vec![table("o", "orders", 0.0)], vec![], vec![created, status]));
+        assert_eq!(
+            sql,
+            "SELECT *\nFROM \"orders\"\nWHERE (\"orders\".\"created\" IS NULL OR (\"orders\".\"created\" >= '2026-09-01' AND \"orders\".\"created\" < '2026-10-01') OR \"orders\".\"created\" > now()) AND \"orders\".\"status\" = 'open'"
         );
     }
 

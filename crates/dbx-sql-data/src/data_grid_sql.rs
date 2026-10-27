@@ -224,6 +224,13 @@ pub enum DataGridContextFilterMode {
     NotLike,
     BeginsWith,
     EndsWith,
+    NotBeginsWith,
+    NotEndsWith,
+    /// `TRIM(col) = ''`: whitespace-only text, never NULL (the typed filter syntax's `EMPTY`).
+    IsEmpty,
+    IsNotEmpty,
+    /// Raw SQL from the typed filter syntax's `{…}`; every `$$` in `value` becomes the column.
+    SqlTemplate,
     LessThan,
     LessThanOrEqual,
     GreaterThan,
@@ -269,6 +276,9 @@ pub struct DataGridContextFilterConditionOptions {
     pub end_value: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column_info: Option<DataGridColumnInfo>,
+    /// Text matching (contains / begins / ends) ignores case where the dialect has `ILIKE`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub like_case_insensitive: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -869,38 +879,39 @@ fn build_data_grid_context_filter_condition_for_refs(
         DataGridContextFilterMode::IsNotBlank => Some(format!("({column} IS NOT NULL AND {column} <> '')")),
         DataGridContextFilterMode::Equals if value.is_null() => Some(format!("{column} IS NULL")),
         DataGridContextFilterMode::NotEquals if value.is_null() => Some(format!("{column} IS NOT NULL")),
-        DataGridContextFilterMode::Like => Some(format!(
-            "{like_column} LIKE {}",
-            format_grid_sql_literal(
-                &Value::String(format!("%{}%", value_to_filter_text(value))),
-                options.database_type,
+        DataGridContextFilterMode::Like => Some(like_filter_predicate(options, like_column, "%", "%", false)),
+        DataGridContextFilterMode::NotLike => Some(like_filter_predicate(options, like_column, "%", "%", true)),
+        DataGridContextFilterMode::BeginsWith => Some(like_filter_predicate(options, like_column, "", "%", false)),
+        DataGridContextFilterMode::EndsWith => Some(like_filter_predicate(options, like_column, "%", "", false)),
+        DataGridContextFilterMode::NotBeginsWith => Some(like_filter_predicate(options, like_column, "", "%", true)),
+        DataGridContextFilterMode::NotEndsWith => Some(like_filter_predicate(options, like_column, "%", "", true)),
+        DataGridContextFilterMode::IsEmpty
+            if matches!(options.database_type, Some(DatabaseType::Oracle | DatabaseType::OceanbaseOracle)) =>
+        {
+            // Oracle stores '' as NULL, so only whitespace-only text can trim down to "empty".
+            Some(format!("({column} IS NOT NULL AND TRIM({column}) IS NULL)"))
+        }
+        DataGridContextFilterMode::IsNotEmpty
+            if matches!(options.database_type, Some(DatabaseType::Oracle | DatabaseType::OceanbaseOracle)) =>
+        {
+            Some(format!("TRIM({column}) IS NOT NULL"))
+        }
+        // `like_column` casts non-text Postgres columns (uuid, …) to text, which TRIM needs.
+        DataGridContextFilterMode::IsEmpty => {
+            Some(format!("{} = ''", trim_filter_expression(options.database_type, like_column)))
+        }
+        DataGridContextFilterMode::IsNotEmpty => {
+            Some(format!("{} <> ''", trim_filter_expression(options.database_type, like_column)))
+        }
+        DataGridContextFilterMode::SqlTemplate => {
+            let template = value_to_filter_text(value);
+            let template = template.trim();
+            if template.is_empty() {
                 None
-            )
-        )),
-        DataGridContextFilterMode::NotLike => Some(format!(
-            "{like_column} NOT LIKE {}",
-            format_grid_sql_literal(
-                &Value::String(format!("%{}%", value_to_filter_text(value))),
-                options.database_type,
-                None
-            )
-        )),
-        DataGridContextFilterMode::BeginsWith => Some(format!(
-            "{like_column} LIKE {}",
-            format_grid_sql_literal(
-                &Value::String(format!("{}%", value_to_filter_text(value))),
-                options.database_type,
-                None
-            )
-        )),
-        DataGridContextFilterMode::EndsWith => Some(format!(
-            "{like_column} LIKE {}",
-            format_grid_sql_literal(
-                &Value::String(format!("%{}", value_to_filter_text(value))),
-                options.database_type,
-                None
-            )
-        )),
+            } else {
+                Some(template.replace("$$", column))
+            }
+        }
         DataGridContextFilterMode::LessThan => Some(format!(
             "{column} < {}",
             format_data_grid_context_filter_literal(
@@ -999,6 +1010,36 @@ fn build_data_grid_context_filter_condition_for_refs(
                 options.identifier_quote.as_deref(),
             )
         )),
+    }
+}
+
+fn like_filter_predicate(
+    options: &DataGridContextFilterConditionOptions,
+    like_column: &str,
+    prefix: &str,
+    suffix: &str,
+    negated: bool,
+) -> String {
+    let operator =
+        match (negated, options.like_case_insensitive && is_postgres_like_pattern_database(options.database_type)) {
+            (false, false) => "LIKE",
+            (true, false) => "NOT LIKE",
+            (false, true) => "ILIKE",
+            (true, true) => "NOT ILIKE",
+        };
+    let pattern = format!("{prefix}{}{suffix}", value_to_filter_text(&options.value));
+    format!(
+        "{like_column} {operator} {}",
+        format_grid_sql_literal(&Value::String(pattern), options.database_type, None)
+    )
+}
+
+/// SQL Server only gained `TRIM` in 2017; `LTRIM(RTRIM(…))` works everywhere it runs.
+fn trim_filter_expression(database_type: Option<DatabaseType>, column: &str) -> String {
+    if database_type == Some(DatabaseType::SqlServer) {
+        format!("LTRIM(RTRIM({column}))")
+    } else {
+        format!("TRIM({column})")
     }
 }
 
@@ -6989,6 +7030,7 @@ mod tests {
                     values: Vec::new(),
                     end_value: None,
                     column_info: Some(column(column_name, "integer", false, None)),
+                    like_case_insensitive: false,
                 })
                 .as_deref(),
                 Some(expected)
@@ -7004,6 +7046,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: Some(column("file_name", "varchar", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("`file_name` = '34-B-0048'")
@@ -7022,6 +7065,7 @@ mod tests {
                     values: Vec::new(),
                     end_value: None,
                     column_info: Some(column("score", "int", false, None)),
+                    like_case_insensitive: false,
                 })
                 .as_deref(),
                 Some(expected)
@@ -7083,6 +7127,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: Some(column("status", "varchar", true, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("\"status\" LIKE '%active%'")
@@ -7097,6 +7142,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: Some(column("update_date", "bigint", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("\"update_date\"::text LIKE '%128%'")
@@ -7111,6 +7157,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: Some(column("created_at", "timestamp without time zone", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("\"created_at\"::text NOT LIKE '%2026%'")
@@ -7125,6 +7172,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: Some(column("file_name", "varchar", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("`file_name` LIKE 'FN%'")
@@ -7139,6 +7187,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: Some(column("file_name", "varchar", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("`file_name` LIKE '%.sql'")
@@ -7153,6 +7202,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: Some(column("update_date", "bigint", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("\"update_date\"::text LIKE '128%'")
@@ -7185,6 +7235,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: Some(column(column_name, "varchar", true, None)),
+                like_case_insensitive: false,
             })
         };
 
@@ -7249,6 +7300,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: None,
+                like_case_insensitive: false,
             })
         };
 
@@ -7275,6 +7327,7 @@ mod tests {
             values: Vec::new(),
             end_value: None,
             column_info: None,
+            like_case_insensitive: false,
         });
 
         assert_eq!(
@@ -7295,6 +7348,7 @@ mod tests {
                 values,
                 end_value,
                 column_info: None,
+                like_case_insensitive: false,
             })
         };
 
@@ -7329,6 +7383,7 @@ mod tests {
                 values: vec![json!(42), json!(99)],
                 end_value: None,
                 column_info: Some(column("id", "int", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("`id` IN (42, 99)")
@@ -7343,6 +7398,7 @@ mod tests {
                 values: vec![Value::Null, json!("active"), json!("pending"), json!("active")],
                 end_value: None,
                 column_info: Some(column("status", "varchar", true, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("(\"status\" IS NULL OR \"status\" IN ('active', 'pending'))")
@@ -7357,6 +7413,7 @@ mod tests {
                 values: vec![Value::Null, json!("active"), json!("pending")],
                 end_value: None,
                 column_info: Some(column("status", "varchar", true, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("(\"status\" IS NOT NULL AND \"status\" NOT IN ('active', 'pending'))")
@@ -7371,6 +7428,7 @@ mod tests {
                 values: vec![json!("O'Reilly"), json!(r"C:\temp")],
                 end_value: None,
                 column_info: Some(column("name", "string", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some(r#"n.`name` IN ['O\'Reilly', 'C:\\temp']"#)
@@ -7385,6 +7443,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: Some(json!(20)),
                 column_info: Some(column("score", "int", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("[score] BETWEEN 10 AND 20")
@@ -7399,6 +7458,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: Some(json!(20)),
                 column_info: Some(column("score", "int", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("[score] NOT BETWEEN 10 AND 20")
@@ -7417,6 +7477,7 @@ mod tests {
                 values: vec![json!(10), json!(20)],
                 end_value: None,
                 column_info: Some(column("score", "integer", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("n.`score` IN [10, 20]")
@@ -7431,6 +7492,7 @@ mod tests {
                 values: vec![json!(10), json!(20)],
                 end_value: None,
                 column_info: Some(column("score", "integer", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("(n.`score` IS NOT NULL AND NOT (n.`score` IN [10, 20]))")
@@ -7445,6 +7507,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: Some(json!(20)),
                 column_info: Some(column("score", "integer", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("(n.`score` >= 10 AND n.`score` <= 20)")
@@ -7459,6 +7522,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: Some(json!(20)),
                 column_info: Some(column("score", "integer", false, None)),
+                like_case_insensitive: false,
             })
             .as_deref(),
             Some("(n.`score` < 10 OR n.`score` > 20)")
@@ -7494,11 +7558,109 @@ mod tests {
                         values,
                         end_value,
                         column_info: Some(column("score", "int", false, None)),
+                        like_case_insensitive: false,
                     }),
                     None,
                     "{database_type:?} must not emit {mode:?}"
                 );
             }
+        }
+    }
+
+    fn typed_syntax_filter(
+        database_type: DatabaseType,
+        mode: DataGridContextFilterMode,
+        value: Value,
+        data_type: &str,
+        like_case_insensitive: bool,
+    ) -> Option<String> {
+        build_data_grid_context_filter_condition(DataGridContextFilterConditionOptions {
+            database_type: Some(database_type),
+            identifier_quote: None,
+            column_name: "name".to_string(),
+            mode,
+            value,
+            values: Vec::new(),
+            end_value: None,
+            column_info: Some(column("name", data_type, true, None)),
+            like_case_insensitive,
+        })
+    }
+
+    #[test]
+    fn builds_typed_filter_syntax_predicates() {
+        use DataGridContextFilterMode as Mode;
+        let pg = DatabaseType::Postgres;
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::NotBeginsWith, json!("ab"), "text", false).as_deref(),
+            Some("\"name\" NOT LIKE 'ab%'")
+        );
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::NotEndsWith, json!("yz"), "text", false).as_deref(),
+            Some("\"name\" NOT LIKE '%yz'")
+        );
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::Like, json!("ab"), "text", true).as_deref(),
+            Some("\"name\" ILIKE '%ab%'")
+        );
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::NotBeginsWith, json!("ab"), "uuid", true).as_deref(),
+            Some("\"name\"::text NOT ILIKE 'ab%'")
+        );
+        // Dialects without ILIKE keep LIKE (their default collations already ignore case).
+        assert_eq!(
+            typed_syntax_filter(DatabaseType::Mysql, Mode::BeginsWith, json!("ab"), "varchar", true).as_deref(),
+            Some("`name` LIKE 'ab%'")
+        );
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::IsEmpty, Value::Null, "text", false).as_deref(),
+            Some("TRIM(\"name\") = ''")
+        );
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::IsNotEmpty, Value::Null, "uuid", false).as_deref(),
+            Some("TRIM(\"name\"::text) <> ''")
+        );
+        assert_eq!(
+            typed_syntax_filter(DatabaseType::SqlServer, Mode::IsEmpty, Value::Null, "nvarchar", false).as_deref(),
+            Some("LTRIM(RTRIM([name])) = ''")
+        );
+        assert_eq!(
+            typed_syntax_filter(DatabaseType::Oracle, Mode::IsEmpty, Value::Null, "VARCHAR2", false).as_deref(),
+            Some("(\"name\" IS NOT NULL AND TRIM(\"name\") IS NULL)")
+        );
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::SqlTemplate, json!("$$ > 5 AND $$ < 10"), "int", false).as_deref(),
+            Some("\"name\" > 5 AND \"name\" < 10")
+        );
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::SqlTemplate, json!(" 1 = 1 "), "int", false).as_deref(),
+            Some("1 = 1")
+        );
+        assert_eq!(typed_syntax_filter(pg, Mode::SqlTemplate, json!("  "), "int", false), None);
+        // Typed numbers arrive as their spelling, so precision is kept.
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::Equals, json!("-12.50"), "numeric", false).as_deref(),
+            Some("\"name\" = -12.50")
+        );
+        assert_eq!(
+            typed_syntax_filter(pg, Mode::GreaterThan, json!("1e3"), "integer", false).as_deref(),
+            Some("\"name\" > 1e3")
+        );
+    }
+
+    #[test]
+    fn typed_filter_syntax_modes_deserialize_from_kebab_case() {
+        let options: DataGridContextFilterConditionOptions = serde_json::from_value(json!({
+            "databaseType": "postgres",
+            "columnName": "name",
+            "mode": "not-begins-with",
+            "value": "a",
+            "likeCaseInsensitive": true
+        }))
+        .unwrap();
+        assert_eq!(build_data_grid_context_filter_condition(options).as_deref(), Some("\"name\"::text NOT ILIKE 'a%'"));
+        for mode in ["not-ends-with", "is-empty", "is-not-empty", "sql-template"] {
+            assert!(serde_json::from_value::<DataGridContextFilterMode>(json!(mode)).is_ok(), "{mode}");
         }
     }
 
@@ -7524,6 +7686,7 @@ mod tests {
                     values: vec![json!(10), json!(20)],
                     end_value: Some(json!(20)),
                     column_info: Some(column("value", "double", false, None)),
+                    like_case_insensitive: false,
                 }),
                 None,
                 "VictoriaMetrics must not emit SQL filter mode {mode:?}"
@@ -7544,6 +7707,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: column_info.clone(),
+                like_case_insensitive: false,
             }),
             None
         );
@@ -7557,6 +7721,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: None,
                 column_info: column_info.clone(),
+                like_case_insensitive: false,
             }),
             None
         );
@@ -7570,6 +7735,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: Some(json!(20)),
                 column_info: column_info.clone(),
+                like_case_insensitive: false,
             }),
             None
         );
@@ -7583,6 +7749,7 @@ mod tests {
                 values: Vec::new(),
                 end_value: Some(Value::Null),
                 column_info,
+                like_case_insensitive: false,
             }),
             None
         );
@@ -7640,6 +7807,7 @@ mod tests {
             values: values.clone(),
             end_value: None,
             column_info: Some(column("id", "number", false, None)),
+            like_case_insensitive: false,
         })
         .unwrap();
         assert_eq!(in_condition.matches("\"id\" IN (").count(), 2);
@@ -7654,6 +7822,7 @@ mod tests {
             values,
             end_value: None,
             column_info: Some(column("id", "number", false, None)),
+            like_case_insensitive: false,
         })
         .unwrap();
         assert_eq!(not_in_condition.matches("\"id\" NOT IN (").count(), 2);

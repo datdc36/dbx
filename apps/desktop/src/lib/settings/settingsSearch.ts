@@ -793,6 +793,7 @@ export const SETTINGS_SEARCH_DEFINITIONS: readonly SettingsSearchDefinition[] = 
   { id: "navigation-sidebar-copy-table-name-include-schema", category: "navigation", titleKey: "settings.sidebarCopyTableNameIncludeSchema", descriptionKey: "settings.sidebarCopyTableNameIncludeSchemaDescription", targetId: "navigation" },
   { id: "data-data-grid-keep-filter-editor-expanded", category: "data", titleKey: "settings.dataGridKeepFilterEditorExpanded", descriptionKey: "settings.dataGridKeepFilterEditorExpandedDescription", targetId: "data-grid-filter-view" },
   { id: "data-data-grid-show-filter-row", category: "data", titleKey: "settings.dataGridShowFilterRow", descriptionKey: "settings.dataGridShowFilterRowDescription", targetId: "data-grid-filter-view" },
+  { id: "data-data-grid-filter-row-style", category: "data", titleKey: "settings.dataGridFilterRowStyle", descriptionKey: "settings.dataGridFilterRowStyleDescription", targetId: "data-grid-filter-view" },
   { id: "data-pin-result-tab-on-click", category: "data", titleKey: "settings.pinResultTabOnClick", descriptionKey: "settings.pinResultTabOnClickDescription", targetId: "pin-result-tab-on-click" },
   { id: "data-query-result-max-rows-enabled", category: "data", titleKey: "settings.queryResultMaxRowsEnabled", targetId: "query-result-max-rows" },
   { id: "data-data-grid-cell-detail-button-visible", category: "data", titleKey: "settings.dataGridCellDetailButtonVisible", descriptionKey: "settings.dataGridCellDetailButtonVisibleDescription", targetId: "data" },

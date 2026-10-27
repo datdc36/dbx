@@ -1,7 +1,8 @@
 import type { ColumnInfo, DatabaseType, ForeignKeyInfo } from "@/types/database";
 import type { DataGridContextFilterMode, GridCellValue } from "@/lib/dataGrid/dataGridSql";
 import { filterModeNeedsValue, filterModeUsesList, filterModeUsesRange, parseFilterValue, parseFilterValues } from "@/lib/dataGrid/dataGridColumnFilter";
-import { dataGridFilterRowColumnKind, dataGridFilterRowDateParts, isDataGridFilterRowFilterActive, type DataGridFilterRowFilter } from "@/lib/dataGrid/dataGridFilterRow";
+import { dataGridFilterRowColumnKind, dataGridFilterRowDateParts, isDataGridFilterRowFilterActive, type DataGridFilterRowColumnKind, type DataGridFilterRowFilter } from "@/lib/dataGrid/dataGridFilterRow";
+import { DataGridFilterSyntaxError, dataGridFilterSyntaxBehaviour, parseDataGridFilterSyntax, type DataGridFilterSyntaxGroups } from "@/lib/dataGrid/dataGridFilterSyntax";
 
 export type QueryDesignerJoinType = "inner-join" | "left-join" | "right-join" | "full-outer-join" | "cross-join" | "where-exists" | "where-not-exists";
 export type QueryDesignerAggregate = "min" | "max" | "count" | "count-distinct" | "sum" | "avg";
@@ -340,6 +341,9 @@ export interface QueryDesignerSqlFilter {
   endValue?: GridCellValue;
   /** Further predicates on the same column, AND-ed with this one (date ranges). */
   and?: QueryDesignerSqlFilter[];
+  /** Alternatives OR-ed with this filter and its `and` parts (typed filters such as `a, b`). */
+  or?: QueryDesignerSqlFilter[];
+  likeCaseInsensitive?: boolean;
 }
 
 export interface QueryDesignerSqlOptions {
@@ -363,10 +367,18 @@ export interface QueryDesignerSqlOptions {
   distinct: boolean;
 }
 
-function toSqlFilter(filter: QueryDesignerColumnFilter | null | undefined, column: QueryDesignerTableColumn | undefined, databaseType: DatabaseType | undefined): QueryDesignerSqlFilter | null {
+/** Filter box flavour of a designer column: date columns get presets and period ranges, counts are numbers. */
+export function queryDesignerFilterKind(column: Pick<QueryDesignerColumn, "aggregate" | "customExpression">, tableColumn: QueryDesignerTableColumn | undefined, group: boolean, databaseType: DatabaseType | undefined): DataGridFilterRowColumnKind {
+  if (group && (column.aggregate === "count" || column.aggregate === "count-distinct")) return "number";
+  if (column.customExpression !== undefined) return "other";
+  return dataGridFilterRowColumnKind(tableColumn?.dataType, databaseType);
+}
+
+function toSqlFilter(filter: QueryDesignerColumnFilter | null | undefined, column: QueryDesignerTableColumn | undefined, kind: DataGridFilterRowColumnKind, databaseType: DatabaseType | undefined): QueryDesignerSqlFilter | null {
   if (!isCompleteDesignerFilter(filter)) return null;
+  if (filter.expression !== undefined) return toSqlSyntaxFilter(filter.expression, kind);
   const columnInfo = column ? { data_type: column.dataType } : undefined;
-  const dateParts = dataGridFilterRowDateParts(filter, dataGridFilterRowColumnKind(column?.dataType, databaseType));
+  const dateParts = dataGridFilterRowDateParts(filter, kind);
   if (dateParts) {
     const [first, ...rest] = dateParts.map((part) => ({ mode: part.mode, value: parseFilterValue(part.rawValue, columnInfo, databaseType) }));
     return rest.length ? { ...first, and: rest } : first;
@@ -380,9 +392,26 @@ function toSqlFilter(filter: QueryDesignerColumnFilter | null | undefined, colum
   };
 }
 
+/** A typed filter (`>10 <20, NULL`) as one filter with `and` parts and `or` alternatives; unparsable text filters nothing. */
+function toSqlSyntaxFilter(expression: string, kind: DataGridFilterRowColumnKind): QueryDesignerSqlFilter | null {
+  let groups: DataGridFilterSyntaxGroups;
+  try {
+    groups = parseDataGridFilterSyntax(expression, dataGridFilterSyntaxBehaviour(kind));
+  } catch (error) {
+    if (error instanceof DataGridFilterSyntaxError) return null;
+    throw error;
+  }
+  const [first, ...alternatives] = groups.map((group): QueryDesignerSqlFilter => {
+    const [head, ...rest] = group.map((part) => ({ mode: part.mode, value: part.value, likeCaseInsensitive: true }));
+    return rest.length ? { ...head, and: rest } : head;
+  });
+  if (!first) return null;
+  return alternatives.length ? { ...first, or: alternatives } : first;
+}
+
 /** Slots beyond the visible OR count are ignored, so hidden leftovers never reach the SQL. */
-function toSqlFilters(filters: QueryDesignerColumn["filters"], slotCount: number, column: QueryDesignerTableColumn | undefined, databaseType: DatabaseType | undefined) {
-  return Array.from({ length: slotCount }, (_, slot) => toSqlFilter(filters?.[slot], column, databaseType));
+function toSqlFilters(filters: QueryDesignerColumn["filters"], slotCount: number, column: QueryDesignerTableColumn | undefined, kind: DataGridFilterRowColumnKind, databaseType: DatabaseType | undefined) {
+  return Array.from({ length: slotCount }, (_, slot) => toSqlFilter(filters?.[slot], column, kind, databaseType));
 }
 
 /** `schemaAware: false` drops the schema from table names (it only carries the database name there). */
@@ -404,8 +433,8 @@ export function buildQueryDesignerSqlOptions(state: QueryDesignerState, database
         isGrouped: !!column.isGrouped,
         aggregate: column.isGrouped ? undefined : column.aggregate,
         sortOrder: column.sortOrder ?? 0,
-        filters: toSqlFilters(column.filters, 1 + (state.orFilterCount ?? 0), tableColumn, databaseType),
-        groupFilters: grouped ? toSqlFilters(column.groupFilters, 1 + (state.groupOrFilterCount ?? 0), tableColumn, databaseType) : [],
+        filters: toSqlFilters(column.filters, 1 + (state.orFilterCount ?? 0), tableColumn, queryDesignerFilterKind(column, tableColumn, false, databaseType), databaseType),
+        groupFilters: grouped ? toSqlFilters(column.groupFilters, 1 + (state.groupOrFilterCount ?? 0), tableColumn, queryDesignerFilterKind(column, tableColumn, true, databaseType), databaseType) : [],
         columnInfo: tableColumn ? { name: tableColumn.name, data_type: tableColumn.dataType, is_nullable: tableColumn.isNullable, is_primary_key: tableColumn.isPrimaryKey } : undefined,
       };
     }),

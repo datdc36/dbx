@@ -65,7 +65,30 @@ export interface DataGridCopyInsertStatementOptions {
   insertMode?: DataGridCopyInsertMode;
 }
 
-export type DataGridContextFilterMode = "equals" | "not-equals" | "is-null" | "is-not-null" | "is-blank" | "is-not-blank" | "like" | "not-like" | "begins-with" | "ends-with" | "less-than" | "less-than-or-equal" | "greater-than" | "greater-than-or-equal" | "in" | "not-in" | "between" | "not-between";
+export type DataGridContextFilterMode =
+  | "equals"
+  | "not-equals"
+  | "is-null"
+  | "is-not-null"
+  | "is-blank"
+  | "is-not-blank"
+  | "like"
+  | "not-like"
+  | "begins-with"
+  | "ends-with"
+  | "not-begins-with"
+  | "not-ends-with"
+  | "is-empty"
+  | "is-not-empty"
+  | "sql-template"
+  | "less-than"
+  | "less-than-or-equal"
+  | "greater-than"
+  | "greater-than-or-equal"
+  | "in"
+  | "not-in"
+  | "between"
+  | "not-between";
 
 export interface DataGridContextFilterConditionOptions {
   databaseType?: DatabaseType;
@@ -76,6 +99,8 @@ export interface DataGridContextFilterConditionOptions {
   values?: GridCellValue[];
   endValue?: GridCellValue;
   columnInfo?: DataGridColumnInfo;
+  /** Contains / begins / ends use `ILIKE` where the dialect has it (expression filters do). */
+  likeCaseInsensitive?: boolean;
 }
 
 export interface DataGridColumnValueFilterConditionOptions {

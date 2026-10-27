@@ -75,6 +75,8 @@ import ProductionWatermark from "@/components/common/ProductionWatermark.vue";
 import CustomContextMenu, { type ContextMenuItem } from "@/components/ui/CustomContextMenu.vue";
 import LightDropdownMenu from "@/components/ui/LightDropdownMenu.vue";
 import DataGridFilterRowCell from "./DataGridFilterRowCell.vue";
+import DataGridFilterRowExpressionCell from "./DataGridFilterRowExpressionCell.vue";
+import { buildDataGridFilterSyntaxCondition } from "@/lib/dataGrid/dataGridFilterSyntax";
 import { activeDataGridFilterRowFilters, combineDataGridFilterRowConditions, dataGridFilterRowColumnKind, dataGridFilterRowConditionOptions, dataGridFilterRowDateParts, dataGridFilterRowSignature, type DataGridFilterRowFilter, type DataGridFilterRowFilters } from "@/lib/dataGrid/dataGridFilterRow";
 import LightTooltip from "@/components/ui/LightTooltip.vue";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -1387,6 +1389,8 @@ const filterRowFilters = ref<DataGridFilterRowFilters>({ ...props.filterRowFilte
 /** Predicate of the applied filter row; table data folds it into its WHERE. */
 const filterRowWhereInput = ref<string | undefined>();
 const isApplyingFilterRow = ref(false);
+/** "operator": value + operator menu; "expression": typed filters (`>10`, `^abc`, `NULL`, `TODAY` …). */
+const filterRowStyle = computed(() => settingsStore.editorSettings.dataGridFilterRowStyle);
 const showFilterRow = computed(() => settingsStore.editorSettings.dataGridShowFilterRow !== false && props.result.columns.length > 0 && (canUseWhereSearch.value || (isResultsContext.value && !!props.onFilterRowApply)));
 watch(
   () => props.filterRowFilters,
@@ -1422,6 +1426,7 @@ async function applyFilterRow(columnName: string, columnIndex: number, filter: D
       Object.entries(active).map(async ([name, entry]) => {
         const index = props.result.columns.indexOf(name);
         const context = { databaseType: resolvedDatabaseType.value, identifierQuote, columnInfo: filterRowColumnInfo(name, index >= 0 ? index : columnIndex) };
+        if (entry.expression !== undefined) return buildDataGridFilterSyntaxCondition(entry.expression, filterRowKind(name, index >= 0 ? index : columnIndex), { ...context, columnName: name });
         const dateParts = dataGridFilterRowDateParts(entry, filterRowKind(name, index >= 0 ? index : columnIndex));
         if (!dateParts) return buildDataGridContextFilterCondition(dataGridFilterRowConditionOptions(name, entry, context));
         const partConditions = await Promise.all(dateParts.map((part) => buildDataGridContextFilterCondition(dataGridFilterRowConditionOptions(name, { mode: part.mode, rawValue: part.rawValue, rawEndValue: "" }, context))));
@@ -16102,7 +16107,18 @@ useUpdateBlocker(() => (hasPendingChanges.value || hasPendingDataEditorDraft.val
                     :class="{ 'data-grid-filter-row-cell--frozen-separator': frozenColumnCount > 0 && col.visibleColIdx === frozenColumnCount - 1 }"
                     :style="columnHeaderStyle(col.visibleColIdx)"
                   >
+                    <DataGridFilterRowExpressionCell
+                      v-if="filterRowStyle === 'expression'"
+                      :filter="filterRowFilters[col.name]"
+                      :kind="filterRowKind(col.name, col.actualColIdx)"
+                      :can-pick-values="!!(canUseWhereSearch || canClientFilterResult)"
+                      :disabled="isApplyingFilterRow || !!loading"
+                      @change="(filter) => applyFilterRow(col.name, col.actualColIdx, filter)"
+                      @pick-values="openFilterRowValues(col.actualColIdx)"
+                      @focus-grid="gridRef?.focus({ preventScroll: true })"
+                    />
                     <DataGridFilterRowCell
+                      v-else
                       :filter="filterRowFilters[col.name]"
                       :kind="filterRowKind(col.name, col.actualColIdx)"
                       :mode-options="filterModeOptions"

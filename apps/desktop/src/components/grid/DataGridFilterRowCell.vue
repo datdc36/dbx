@@ -79,7 +79,9 @@ function labelForMode(value: DataGridContextFilterMode): string {
   const option = props.modeOptions.find((candidate) => candidate.value === value);
   return option ? t(option.labelKey) : value;
 }
-const modeLabel = computed(() => (preset.value ? t(presetLabelKey(preset.value)) : labelForMode(mode.value)));
+/** A typed expression filter made before switching style stays as it is until the box is edited. */
+const showsExpression = computed(() => props.filter?.expression !== undefined && draftValue.value === props.filter.expression);
+const modeLabel = computed(() => (showsExpression.value ? t("grid.filterRowExpression") : preset.value ? t(presetLabelKey(preset.value)) : labelForMode(mode.value)));
 const placeholder = computed(() => {
   if (!props.filter && mode.value === defaultDataGridFilterRowMode(props.kind)) return t("grid.filterRowPlaceholder");
   return filterModeUsesList(mode.value) ? `${modeLabel.value}: a, b, c` : modeLabel.value;
@@ -99,6 +101,7 @@ const menuItems = computed<LightDropdownMenuItem[]>(() =>
 /** What the box shows: the typed value, or the name of a preset / value-less operator as editable text. */
 function boxText(filter: DataGridFilterRowFilter | undefined): string {
   if (!filter) return "";
+  if (filter.expression !== undefined) return filter.expression;
   if (filter.preset) return t(presetLabelKey(filter.preset));
   if (!filterModeNeedsValue(filter.mode)) return labelForMode(filter.mode);
   return filter.rawValue;
@@ -118,6 +121,7 @@ function keywordFor(text: string): { preset?: DataGridFilterRowDatePreset; mode?
 }
 
 function commit(nextMode = mode.value) {
+  if (showsExpression.value && nextMode === props.filter?.mode) return;
   if (preset.value) {
     if (props.filter?.preset !== preset.value) emit("change", { mode: "between", rawValue: "", rawEndValue: "", preset: preset.value });
     return;
@@ -148,7 +152,7 @@ function selectMenuItem(value: string) {
     commit();
     return;
   }
-  const showedLabel = !!preset.value || !filterModeNeedsValue(mode.value);
+  const showedLabel = !!preset.value || !filterModeNeedsValue(mode.value) || showsExpression.value;
   preset.value = undefined;
   mode.value = value as DataGridContextFilterMode;
   if (!filterModeNeedsValue(mode.value)) draftValue.value = labelForMode(mode.value);

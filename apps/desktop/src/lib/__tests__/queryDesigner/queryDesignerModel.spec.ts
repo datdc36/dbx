@@ -10,6 +10,7 @@ import {
   createQueryDesignerState,
   groupForeignKeys,
   nextTableAlias,
+  queryDesignerFilterKind,
   removeDesignerTable,
   setOrFilterCount,
   updateDesignerColumn,
@@ -174,5 +175,26 @@ describe("query designer model", () => {
     const [filter] = buildQueryDesignerSqlOptions(state, "postgres").columns[0].filters;
     expect(filter?.mode).toBe("greater-than-or-equal");
     expect(filter?.and).toHaveLength(1);
+  });
+
+  it("sends expression filters as and-parts and or-alternatives", () => {
+    const createId = ids();
+    let state = addDesignerTable(createQueryDesignerState(), customers, { x: 0, y: 0 }, createId);
+    const designerId = state.tables[0].designerId;
+    state = updateDesignerColumn(state, { designerId, columnName: "name" }, { filters: [{ mode: "like", rawValue: "", rawEndValue: "", expression: "^a $z, NULL" }] });
+    state = updateDesignerColumn(state, { designerId, columnName: "id" }, { filters: [{ mode: "equals", rawValue: "", rawEndValue: "", expression: ">10" }] });
+    const options = buildQueryDesignerSqlOptions(state, "postgres");
+    expect(options.columns.find((entry) => entry.columnName === "name")?.filters).toEqual([{ mode: "begins-with", value: "a", likeCaseInsensitive: true, and: [{ mode: "ends-with", value: "z", likeCaseInsensitive: true }], or: [{ mode: "is-null", value: null, likeCaseInsensitive: true }] }]);
+    expect(options.columns.find((entry) => entry.columnName === "id")?.filters).toEqual([{ mode: "greater-than", value: "10", likeCaseInsensitive: true }]);
+
+    // Text that no longer parses for the column filters nothing.
+    state = updateDesignerColumn(state, { designerId, columnName: "id" }, { filters: [{ mode: "equals", rawValue: "", rawEndValue: "", expression: "abc" }] });
+    expect(buildQueryDesignerSqlOptions(state, "postgres").columns.find((entry) => entry.columnName === "id")?.filters).toEqual([null]);
+  });
+
+  it("reads COUNT group filters as numbers", () => {
+    expect(queryDesignerFilterKind({ aggregate: "count" }, { name: "name", dataType: "text", isNullable: true, isPrimaryKey: false }, true, "postgres")).toBe("number");
+    expect(queryDesignerFilterKind({ aggregate: "count" }, { name: "name", dataType: "text", isNullable: true, isPrimaryKey: false }, false, "postgres")).toBe("text");
+    expect(queryDesignerFilterKind({ customExpression: "a + b" }, undefined, false, "postgres")).toBe("other");
   });
 });

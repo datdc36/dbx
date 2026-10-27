@@ -19,6 +19,11 @@ export interface DataGridFilterRowFilter {
   rawEndValue: string;
   /** Relative date range ("this week" …), resolved against the current date each time it is applied. */
   preset?: DataGridFilterRowDatePreset;
+  /**
+   * Typed filter expression (`>10 <20`, `^ab, $yz`, `TODAY` …, see dataGridFilterSyntax.ts).
+   * When set it replaces mode / value; such filters come from the "expression" filter row style.
+   */
+  expression?: string;
 }
 
 export type DataGridFilterRowFilters = Record<string, DataGridFilterRowFilter>;
@@ -59,7 +64,9 @@ export function dataGridFilterRowModeApplies(mode: DataGridContextFilterMode, ki
 }
 
 export function isDataGridFilterRowFilterActive(filter: DataGridFilterRowFilter | undefined): filter is DataGridFilterRowFilter {
-  return !!filter && (!!filter.preset || filterModeHasCompleteValue(filter.mode, filter.rawValue, filter.rawEndValue));
+  if (!filter) return false;
+  if (filter.expression !== undefined) return filter.expression.trim().length > 0;
+  return !!filter.preset || filterModeHasCompleteValue(filter.mode, filter.rawValue, filter.rawEndValue);
 }
 
 export function activeDataGridFilterRowFilters(filters: DataGridFilterRowFilters): DataGridFilterRowFilters {
@@ -72,7 +79,11 @@ export function dataGridFilterRowSignature(filters: DataGridFilterRowFilters): s
   return JSON.stringify(
     Object.keys(active)
       .sort()
-      .map((column) => [column, active[column].preset ?? active[column].mode, active[column].preset ? "" : active[column].rawValue.trim(), !active[column].preset && filterModeUsesRange(active[column].mode) ? active[column].rawEndValue.trim() : ""]),
+      .map((column) => {
+        const filter = active[column];
+        if (filter.expression !== undefined) return [column, "expression", filter.expression.trim(), ""];
+        return [column, filter.preset ?? filter.mode, filter.preset ? "" : filter.rawValue.trim(), !filter.preset && filterModeUsesRange(filter.mode) ? filter.rawEndValue.trim() : ""];
+      }),
   );
 }
 
@@ -138,7 +149,7 @@ export function dataGridFilterRowPresetRange(preset: DataGridFilterRowDatePreset
  * 1 October. Returns `undefined` when the filter is already a plain predicate.
  */
 export function dataGridFilterRowDateParts(filter: DataGridFilterRowFilter, kind: DataGridFilterRowColumnKind, now = new Date()): Array<{ mode: DataGridContextFilterMode; rawValue: string }> | undefined {
-  if (kind !== "datetime") return undefined;
+  if (kind !== "datetime" || filter.expression !== undefined) return undefined;
   if (filter.preset) {
     const { start, end } = dataGridFilterRowPresetRange(filter.preset, now);
     return [
